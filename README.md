@@ -447,42 +447,39 @@ HALCON 标定板尺寸由 `gen_caltab()` 参数派生：
 
 ## STEP 建模模式
 
-七个脚本都使用 `STEP_GEOMETRY_MODE` 控制 STEP 黑色图案建模方式。
+所有生成脚本都使用 `STEP_GEOMETRY_MODE` 控制 STEP 黑色图案建模方式。可选模式有两种：
 
-ChArUco / ArUco 标记板：
+| 模式 | 适合场景 | 优点 | 代价 |
+| --- | --- | --- | --- |
+| `rectangles_no_gaps` | 棋盘格、圆点板、HALCON 板、普通 ArUco 板 | 尽量使用矩形/圆柱等规则几何；相邻黑色模块共享边，避免内缩缝隙 | 对 AprilTag 这类细碎图案会生成很多实体和面 |
+| `contours_filtered` | Aprilgrid、使用 `DICT_APRILTAG_*` 字典的标记板 | 对整体轮廓内缩并过滤小岛/薄壁碎片；STEP 面数更低，SolidWorks 导入、旋转查看、后续编辑更轻快 | 几何会按轮廓合并，适合建模和打印，不适合作为逐像素结构对比 |
+
+默认策略：
 
 ```text
-auto               默认。普通 ArUco 字典使用 rectangles_no_gaps；DICT_APRILTAG_* 使用 contours_filtered。
-rectangles_no_gaps 相邻黑色模块共享边不内缩，只在黑白交界处内缩。
-contours_filtered  整体轮廓内缩，并过滤小岛/薄壁碎片。
+ChArUco              auto
+ArUco 标记板         auto
+Aprilgrid            contours_filtered
+棋盘格               rectangles_no_gaps
+圆点板               rectangles_no_gaps
+非对称圆点板         rectangles_no_gaps
+HALCON 标定板        rectangles_no_gaps
 ```
 
-棋盘格可选：
+`auto` 会根据字典自动选择：
 
 ```text
-rectangles_no_gaps  推荐。相邻黑色模块共享边不内缩，只在黑白交界处内缩。
-contours_filtered   整体轮廓内缩，并过滤小岛/薄壁碎片。
+普通 ArUco 字典      rectangles_no_gaps
+DICT_APRILTAG_*      contours_filtered
 ```
 
-圆点板推荐：
+为什么 AprilTag 默认使用 `contours_filtered`：
 
 ```text
-rectangles_no_gaps  生成真实圆柱凸起，对称/非对称圆点板都推荐该模式。
-contours_filtered   按图像轮廓生成实体，主要用于对比。
-```
-
-Aprilgrid 推荐：
-
-```text
-Aprilgrid 默认使用 contours_filtered。AprilTag 内部图案细节多，该模式通常能明显减少 STEP 面数。
-rectangles_no_gaps  保留为对比模式，会生成更多细节和更多实体。
-```
-
-HALCON 标定板推荐：
-
-```text
-rectangles_no_gaps  圆点为圆柱，外框为矩形凸起，左上角三角标识为三角形凸起。
-contours_filtered   按图像轮廓生成实体，主要用于对比。
+AprilTag 内部黑白单元非常碎。
+rectangles_no_gaps 会把许多小单元作为独立实体生成，STEP 文件面数较高。
+contours_filtered 会合并连续黑色轮廓并过滤过小碎片，通常能显著降低 STEP 面数。
+例如默认 Aprilgrid：rectangles_no_gaps 约 3004 个黑色实体，contours_filtered 约 108 个黑色实体。
 ```
 
 命令行临时覆盖示例：
