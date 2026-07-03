@@ -6,19 +6,19 @@ if (-not (Get-Command conda -ErrorAction SilentlyContinue)) {
 
 Push-Location $PSScriptRoot
 try {
-    $envExists = conda env list | Select-String -Pattern "charuco-board-generator"
+    $envExists = conda env list | Select-String -Pattern "calibration-target-generator"
     if ($envExists) {
-        Write-Host "[INFO] Updating conda environment: charuco-board-generator"
+        Write-Host "[INFO] Updating conda environment: calibration-target-generator"
         conda env update -f environment.yml --prune
     } else {
-        Write-Host "[INFO] Creating conda environment: charuco-board-generator"
+        Write-Host "[INFO] Creating conda environment: calibration-target-generator"
         conda env create -f environment.yml
     }
 
     Write-Host ""
     Write-Host "[SUCCESS] Environment is ready."
     Write-Host "Run:"
-    Write-Host "  conda activate charuco-board-generator"
+    Write-Host "  conda activate calibration-target-generator"
     Write-Host "  python generate_charuco_board.py"
     Write-Host "  python generate_chess_board.py"
     Write-Host "  python generate_circle_grid_board.py"

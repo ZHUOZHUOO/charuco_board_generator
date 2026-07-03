@@ -1,4 +1,6 @@
-# 标定板生成器
+# Calibration Target Generator
+
+相机标定板 PNG / SVG / DXF / STEP 一体化生成工具。
 
 ## 功能预览
 
@@ -82,16 +84,16 @@ board_generator_core.py
 推荐使用 conda：
 
 ```powershell
-cd charuco_board_generator
+cd calibration_target_generator
 conda env create -f environment.yml
-conda activate charuco-board-generator
+conda activate calibration-target-generator
 python generate_charuco_board.py
 ```
 
 Windows 也可以直接运行：
 
 ```powershell
-cd charuco_board_generator
+cd calibration_target_generator
 .\setup_env.ps1
 .\run_default.ps1 charuco
 .\run_default.ps1 chess
@@ -105,7 +107,7 @@ cd charuco_board_generator
 如果不用 conda，也可以使用 venv/pip：
 
 ```powershell
-cd charuco_board_generator
+cd calibration_target_generator
 python -m venv .venv
 .\.venv\Scripts\activate
 python -m pip install -r requirements.txt

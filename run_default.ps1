@@ -18,7 +18,7 @@ $scripts = @{
 Push-Location $PSScriptRoot
 try {
     $script = $scripts[$Board]
-    conda run -n charuco-board-generator python $script
+    conda run -n calibration-target-generator python $script
 } finally {
     Pop-Location
 }
