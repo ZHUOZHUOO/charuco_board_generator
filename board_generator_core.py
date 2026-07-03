@@ -148,9 +148,7 @@ def create_charuco_board(
     )
 
 
-def default_prefix(args: argparse.Namespace) -> str:
-    if args.output_prefix:
-        return args.output_prefix
+def _auto_prefix(args: argparse.Namespace) -> str:
     if args.board_type == "chessboard":
         return (
             f"chessboard_{fmt_token(args.base_width_mm)}x{fmt_token(args.base_height_mm)}_"
@@ -199,6 +197,39 @@ def default_prefix(args: argparse.Namespace) -> str:
         f"{args.squares_x}x{args.squares_y}_"
         f"{fmt_token(args.square_mm)}mm_{fmt_token(args.marker_mm)}mm"
     )
+
+
+def default_prefix(args: argparse.Namespace) -> str:
+    if args.output_prefix:
+        return args.output_prefix
+    return _auto_prefix(args)
+
+
+def output_group_name(args: argparse.Namespace) -> str:
+    if args.board_type == "charuco":
+        return "charuco"
+    if args.board_type == "chessboard":
+        return "chessboard"
+    if args.board_type == "circle_grid":
+        return "circle_grid"
+    if args.board_type == "asymmetric_circle_grid":
+        return "asymmetric_circle_grid"
+    if args.board_type == "aruco_marker_board":
+        return "aruco_marker_board"
+    if args.board_type == "aprilgrid":
+        return "aprilgrid"
+    if args.board_type == "framed_circle_grid":
+        return "halcon"
+    return args.board_type
+
+
+def resolve_generation_output_dir(args: argparse.Namespace, prefix: str) -> Path:
+    # Layout: outputs/<board-type>/<parameter-set>/...
+    # The parameter folder is independent from --output-prefix, so different
+    # parameter sets will not be mixed even when a custom file prefix is used.
+    return args.output_dir / output_group_name(args) / _auto_prefix(args)
+
+
 
 
 def pattern_size_mm(args: argparse.Namespace) -> tuple[float, float]:
@@ -1691,8 +1722,10 @@ def _run_generation(args: argparse.Namespace) -> int:
     validate_args(args)
 
     prefix = default_prefix(args)
-    output_dir = args.output_dir
+    output_dir = resolve_generation_output_dir(args, prefix)
+    args.resolved_output_dir = output_dir
     ensure_dir(output_dir)
+    print(f"[INFO] Output directory: {output_dir}")
 
     need_2d = not args.no_png or not args.no_svg or not args.no_dxf
     if need_2d:

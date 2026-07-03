@@ -359,6 +359,35 @@ python generate_halcon_board.py --base-thickness-mm 3
 outputs/
 ```
 
+实际文件会按标定板类型和参数组合自动分文件夹，避免不同标定板或不同参数混在一起：
+
+```text
+outputs/
+  charuco/
+    charuco_board_240x180_11x8_20mm_15mm/
+      *.png / *.svg / *.dxf / *.step
+  chessboard/
+    chessboard_240x180_11x8_20mm/
+      *.png / *.svg / *.dxf / *.step
+  circle_grid/
+    circle_grid_240x180_11x8_spacing20mm_dia8mm/
+      *.png / *.svg / *.dxf / *.step
+  asymmetric_circle_grid/
+    asymmetric_circle_grid_240x180_7x9_spacing16mm_dia8mm/
+      *.png / *.svg / *.dxf / *.step
+  aruco_marker_board/
+    aruco_marker_board_240x180_5x4_30mm_gap10mm_id0_DICT_5X5/
+      *.png / *.svg / *.dxf / *.step
+  aprilgrid/
+    aprilgrid_180x180_6x6_tag20mm_spacing0p3_id0_DICT_APRILTAG_36H11/
+      *.png / *.svg / *.dxf / *.step / *.yaml
+  halcon/
+    halcon_board_244x244_11x11_dist20mm_ratio0p5/
+      *.png / *.svg / *.dxf / *.step / *.descr / *.ps
+```
+
+`--output-dir` 只改变根输出目录；`--output-prefix` 只改变文件名前缀，不会改变参数文件夹名。
+
 ## 尺寸关系
 
 ChArUco / 棋盘格标定区域：

@@ -173,10 +173,10 @@ def main(argv: list[str] | None = None) -> int:
         return result
 
     if not parsed.no_descr:
-        descr_path = core.write_halcon_descr(args.output_dir, args, parsed.cal_plate_descr)
+        descr_path = core.write_halcon_descr(args.resolved_output_dir, args, parsed.cal_plate_descr)
         print(f"[SUCCESS] HALCON descr: {descr_path}")
     if not parsed.no_ps:
-        ps_path = core.write_halcon_ps(args.output_dir, args, parsed.cal_plate_ps_file)
+        ps_path = core.write_halcon_ps(args.resolved_output_dir, args, parsed.cal_plate_ps_file)
         print(f"[SUCCESS] HALCON PS: {ps_path}")
     return result
 

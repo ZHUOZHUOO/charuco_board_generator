@@ -153,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not parsed.no_yaml:
         yaml_file = parsed.aprilgrid_yaml_file or f"{core.default_prefix(args)}.yaml"
-        yaml_path = core.write_aprilgrid_yaml(args.output_dir, args, yaml_file)
+        yaml_path = core.write_aprilgrid_yaml(args.resolved_output_dir, args, yaml_file)
         print(f"[SUCCESS] Aprilgrid YAML: {yaml_path}")
     return result
 
