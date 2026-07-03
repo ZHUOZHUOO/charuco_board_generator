@@ -57,9 +57,10 @@ BLACK_SHRINK_MM = 0.02
 MIN_FEATURE_MM = 1.0
 
 # STEP 黑色图案建模方式：
+# auto：普通 ArUco 字典默认使用 rectangles_no_gaps；DICT_APRILTAG_* 默认使用 contours_filtered。
 # rectangles_no_gaps：推荐。相邻黑色单元共享边不内缩，只在黑白交界处内缩。
 # contours_filtered：按整体轮廓内缩并过滤小岛/薄壁碎片。
-STEP_GEOMETRY_MODE = "rectangles_no_gaps"
+STEP_GEOMETRY_MODE = "auto"
 
 # PNG/SVG/DXF 分辨率：每个 marker 边长对应的像素数。
 # 只影响 2D 文件精度，不影响 STEP 的真实尺寸。
@@ -96,7 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-feature-mm", type=float, default=MIN_FEATURE_MM)
     parser.add_argument(
         "--step-geometry-mode",
-        choices=("rectangles_no_gaps", "contours_filtered"),
+        choices=("auto", "rectangles_no_gaps", "contours_filtered"),
         default=STEP_GEOMETRY_MODE,
     )
     parser.add_argument("--pixels-per-marker", type=int, default=PIXELS_PER_MARKER)

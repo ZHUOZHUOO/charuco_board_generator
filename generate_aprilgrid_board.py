@@ -63,9 +63,9 @@ BLACK_SHRINK_MM = 0.02
 MIN_FEATURE_MM = 1.0
 
 # STEP 黑色图案建模方式：
-# rectangles_no_gaps：推荐。相邻黑色单元共享边不内缩，只在黑白交界处内缩。
-# contours_filtered：按整体轮廓内缩并过滤小岛/薄壁碎片。
-STEP_GEOMETRY_MODE = "rectangles_no_gaps"
+# contours_filtered：默认。AprilTag 图案细节很多，用轮廓过滤模式可明显减少 STEP 面数。
+# rectangles_no_gaps：保留为对比模式，会生成更多细节和更多实体。
+STEP_GEOMETRY_MODE = "contours_filtered"
 
 # PNG/SVG/DXF 分辨率：每个 tag 边长对应的像素数。
 # 只影响 2D 文件精度，不影响 STEP 的真实尺寸。

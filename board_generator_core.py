@@ -104,6 +104,14 @@ APRILTAG_DICTIONARIES = {
 }
 
 
+def resolve_black_geometry(args: argparse.Namespace) -> str:
+    if args.black_geometry != "auto":
+        return args.black_geometry
+    if args.board_type == "aprilgrid" or args.dictionary in APRILTAG_DICTIONARIES:
+        return "contours_filtered"
+    return "rectangles_no_gaps"
+
+
 def ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
@@ -1719,6 +1727,7 @@ def validate_args(args: argparse.Namespace) -> None:
 
 
 def _run_generation(args: argparse.Namespace) -> int:
+    args.black_geometry = resolve_black_geometry(args)
     validate_args(args)
 
     prefix = default_prefix(args)
