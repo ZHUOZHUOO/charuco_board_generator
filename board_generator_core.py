@@ -48,6 +48,11 @@ CIRCLES_X = 11
 CIRCLES_Y = 8
 CIRCLE_SPACING_MM = 20.0
 CIRCLE_DIAMETER_MM = 8.0
+MARKERS_X = 5
+MARKERS_Y = 4
+ARUCO_MARKER_MM = 30.0
+MARKER_GAP_MM = 10.0
+FIRST_MARKER_ID = 0
 FRAMED_FRAME_MARGIN_MM = 8.0
 FRAMED_FRAME_WIDTH_MM = 2.0
 FRAMED_TRIANGLE_ENABLED = True
@@ -146,12 +151,26 @@ def default_prefix(args: argparse.Namespace) -> str:
             f"spacing{fmt_token(args.circle_spacing_mm)}mm_"
             f"dia{fmt_token(args.circle_diameter_mm)}mm"
         )
+    if args.board_type == "asymmetric_circle_grid":
+        return (
+            f"asymmetric_circle_grid_{fmt_token(args.base_width_mm)}x{fmt_token(args.base_height_mm)}_"
+            f"{args.circles_x}x{args.circles_y}_"
+            f"spacing{fmt_token(args.circle_spacing_mm)}mm_"
+            f"dia{fmt_token(args.circle_diameter_mm)}mm"
+        )
     if args.board_type == "framed_circle_grid":
         return (
             f"framed_circle_grid_{fmt_token(args.base_width_mm)}x{fmt_token(args.base_height_mm)}_"
             f"{args.circles_x}x{args.circles_y}_"
             f"spacing{fmt_token(args.circle_spacing_mm)}mm_"
             f"dia{fmt_token(args.circle_diameter_mm)}mm"
+        )
+    if args.board_type == "aruco_marker_board":
+        return (
+            f"aruco_marker_board_{fmt_token(args.base_width_mm)}x{fmt_token(args.base_height_mm)}_"
+            f"{args.markers_x}x{args.markers_y}_"
+            f"{fmt_token(args.aruco_marker_mm)}mm_gap{fmt_token(args.marker_gap_mm)}mm_"
+            f"id{args.first_marker_id}_{args.dictionary}"
         )
     return (
         f"charuco_board_{fmt_token(args.base_width_mm)}x{fmt_token(args.base_height_mm)}_"
@@ -165,6 +184,19 @@ def pattern_size_mm(args: argparse.Namespace) -> tuple[float, float]:
         return (
             (args.circles_x - 1) * args.circle_spacing_mm + args.circle_diameter_mm,
             (args.circles_y - 1) * args.circle_spacing_mm + args.circle_diameter_mm,
+        )
+    if args.board_type == "asymmetric_circle_grid":
+        width_center_span = 2.0 * (args.circles_x - 1) * args.circle_spacing_mm
+        if args.circles_y > 1:
+            width_center_span += args.circle_spacing_mm
+        return (
+            width_center_span + args.circle_diameter_mm,
+            (args.circles_y - 1) * args.circle_spacing_mm + args.circle_diameter_mm,
+        )
+    if args.board_type == "aruco_marker_board":
+        return (
+            args.markers_x * args.aruco_marker_mm + (args.markers_x - 1) * args.marker_gap_mm,
+            args.markers_y * args.aruco_marker_mm + (args.markers_y - 1) * args.marker_gap_mm,
         )
     return args.squares_x * args.square_mm, args.squares_y * args.square_mm
 
@@ -203,15 +235,28 @@ def render_circle_grid_pattern(args: argparse.Namespace, px_to_mm: float) -> np.
     pattern_h_px = int(round(pattern_h_mm / px_to_mm))
     image = np.full((pattern_h_px, pattern_w_px), 255, dtype=np.uint8)
     radius_px = int(round(args.circle_diameter_mm / 2.0 / px_to_mm))
-    margin_px = radius_px
-    spacing_px = args.circle_spacing_mm / px_to_mm
-    for row in range(args.circles_y):
-        for col in range(args.circles_x):
-            center = (
-                int(round(margin_px + col * spacing_px)),
-                int(round(margin_px + row * spacing_px)),
-            )
-            cv2.circle(image, center, radius_px, 0, thickness=-1, lineType=cv2.LINE_8)
+    for x_mm, y_mm in circle_pattern_centers_mm(args):
+        center = (int(round(x_mm / px_to_mm)), int(round(y_mm / px_to_mm)))
+        cv2.circle(image, center, radius_px, 0, thickness=-1, lineType=cv2.LINE_8)
+    return image
+
+
+def render_aruco_marker_board_pattern(args: argparse.Namespace, px_to_mm: float) -> np.ndarray:
+    pattern_w_mm, pattern_h_mm = pattern_size_mm(args)
+    pattern_w_px = int(round(pattern_w_mm / px_to_mm))
+    pattern_h_px = int(round(pattern_h_mm / px_to_mm))
+    image = np.full((pattern_h_px, pattern_w_px), 255, dtype=np.uint8)
+    marker_px = int(round(args.aruco_marker_mm / px_to_mm))
+    gap_px = int(round(args.marker_gap_mm / px_to_mm))
+    dictionary = get_aruco_dictionary(args.dictionary)
+    marker_id = args.first_marker_id
+    for row in range(args.markers_y):
+        for col in range(args.markers_x):
+            marker_image = cv2.aruco.generateImageMarker(dictionary, int(marker_id), marker_px, borderBits=1)
+            x0 = col * (marker_px + gap_px)
+            y0 = row * (marker_px + gap_px)
+            image[y0 : y0 + marker_px, x0 : x0 + marker_px] = marker_image
+            marker_id += 1
     return image
 
 
@@ -305,7 +350,12 @@ def render_board_image(args: argparse.Namespace) -> tuple[np.ndarray, float, flo
     if pattern_w_mm > args.base_width_mm or pattern_h_mm > args.base_height_mm:
         raise ValueError("内部标定区域尺寸不能大于白色基板尺寸。")
 
-    scale_mm = args.circle_spacing_mm if args.board_type in {"circle_grid", "framed_circle_grid"} else args.square_mm
+    if args.board_type in {"circle_grid", "asymmetric_circle_grid", "framed_circle_grid"}:
+        scale_mm = args.circle_spacing_mm
+    elif args.board_type == "aruco_marker_board":
+        scale_mm = args.aruco_marker_mm
+    else:
+        scale_mm = args.square_mm
     px_to_mm = scale_mm / args.pixels_per_square
     if args.board_type == "framed_circle_grid":
         board_image = render_framed_circle_grid_image(args, px_to_mm)
@@ -314,8 +364,10 @@ def render_board_image(args: argparse.Namespace) -> tuple[np.ndarray, float, flo
         pattern_image = render_charuco_pattern(args, px_to_mm)
     elif args.board_type == "chessboard":
         pattern_image = render_chessboard_pattern(args, px_to_mm)
-    elif args.board_type == "circle_grid":
+    elif args.board_type in {"circle_grid", "asymmetric_circle_grid"}:
         pattern_image = render_circle_grid_pattern(args, px_to_mm)
+    elif args.board_type == "aruco_marker_board":
+        pattern_image = render_aruco_marker_board_pattern(args, px_to_mm)
     else:
         raise ValueError(f"不支持的标定板类型：{args.board_type}")
 
@@ -416,20 +468,48 @@ def write_svg_preview(
     output_path.write_text(svg, encoding="utf-8")
 
 
-def circle_centers_mm(args: argparse.Namespace) -> list[tuple[float, float]]:
-    pattern_w_mm, pattern_h_mm = pattern_size_mm(args)
-    origin_x_mm = (args.base_width_mm - pattern_w_mm) / 2.0 + args.circle_diameter_mm / 2.0
-    origin_y_mm = (args.base_height_mm - pattern_h_mm) / 2.0 + args.circle_diameter_mm / 2.0
+def circle_pattern_centers_mm(args: argparse.Namespace) -> list[tuple[float, float]]:
+    radius_mm = args.circle_diameter_mm / 2.0
     centers = []
     for row in range(args.circles_y):
         for col in range(args.circles_x):
+            if args.board_type == "asymmetric_circle_grid":
+                x_mm = radius_mm + (2 * col + row % 2) * args.circle_spacing_mm
+            else:
+                x_mm = radius_mm + col * args.circle_spacing_mm
             centers.append(
                 (
-                    origin_x_mm + col * args.circle_spacing_mm,
-                    origin_y_mm + row * args.circle_spacing_mm,
+                    x_mm,
+                    radius_mm + row * args.circle_spacing_mm,
                 )
             )
     return centers
+
+
+def circle_centers_mm(args: argparse.Namespace) -> list[tuple[float, float]]:
+    pattern_w_mm, pattern_h_mm = pattern_size_mm(args)
+    origin_x_mm = (args.base_width_mm - pattern_w_mm) / 2.0
+    origin_y_mm = (args.base_height_mm - pattern_h_mm) / 2.0
+    return [(origin_x_mm + x_mm, origin_y_mm + y_mm) for x_mm, y_mm in circle_pattern_centers_mm(args)]
+
+
+def aruco_marker_origins_mm(args: argparse.Namespace) -> list[tuple[int, float, float]]:
+    pattern_w_mm, pattern_h_mm = pattern_size_mm(args)
+    origin_x_mm = (args.base_width_mm - pattern_w_mm) / 2.0
+    origin_y_mm = (args.base_height_mm - pattern_h_mm) / 2.0
+    markers = []
+    marker_id = args.first_marker_id
+    for row in range(args.markers_y):
+        for col in range(args.markers_x):
+            markers.append(
+                (
+                    marker_id,
+                    origin_x_mm + col * (args.aruco_marker_mm + args.marker_gap_mm),
+                    origin_y_mm + row * (args.aruco_marker_mm + args.marker_gap_mm),
+                )
+            )
+            marker_id += 1
+    return markers
 
 
 def circle_grid_svg_elements(args: argparse.Namespace, radius_delta_mm: float = 0.0) -> str:
@@ -469,7 +549,7 @@ def write_svgs(
     height_mm: float,
     args: argparse.Namespace,
 ) -> tuple[Path, Path, Path]:
-    if args.board_type == "circle_grid":
+    if args.board_type in {"circle_grid", "asymmetric_circle_grid"}:
         black_rects = circle_grid_svg_elements(args)
     elif args.board_type == "framed_circle_grid":
         black_rects = framed_circle_grid_svg_elements(args)
@@ -743,7 +823,7 @@ def write_dxfs(
     shrink_token = f"_shrink{fmt_token(shrink_mm)}" if shrink_mm > 0.0 else ""
     if color in {"black", "both"}:
         black_output = output_dir / f"{prefix}{shrink_token}_black.dxf"
-        if args.board_type == "circle_grid":
+        if args.board_type in {"circle_grid", "asymmetric_circle_grid"}:
             write_dxf_circle_layer(black_output, width_mm, height_mm, args, "BLACK", shrink_mm)
         elif args.board_type == "framed_circle_grid":
             write_dxf_framed_circle_layer(black_output, width_mm, height_mm, args, "BLACK", shrink_mm)
@@ -955,27 +1035,93 @@ def make_chessboard_step_solids(cq, args: argparse.Namespace) -> tuple[list, int
 
 
 def make_circle_grid_step_solids(cq, args: argparse.Namespace) -> tuple[list, int]:
-    pattern_w_mm, pattern_h_mm = pattern_size_mm(args)
-    origin_x_mm = (args.base_width_mm - pattern_w_mm) / 2.0 + args.circle_diameter_mm / 2.0
-    origin_y_mm = (args.base_height_mm - pattern_h_mm) / 2.0 + args.circle_diameter_mm / 2.0
     radius_mm = args.circle_diameter_mm / 2.0 - args.black_shrink_mm
     if radius_mm * 2.0 <= args.min_feature_mm:
         return [], args.circles_x * args.circles_y
 
     solids: list = []
-    for row in range(args.circles_y):
-        for col in range(args.circles_x):
-            x_mm = origin_x_mm + col * args.circle_spacing_mm
-            y_down_mm = origin_y_mm + row * args.circle_spacing_mm
-            center_x = x_mm - args.base_width_mm / 2.0
-            center_y = args.base_height_mm / 2.0 - y_down_mm
-            solids.append(
-                cq.Workplane("XY")
-                .circle(radius_mm)
-                .extrude(args.black_height_mm)
-                .translate((center_x, center_y, args.base_thickness_mm))
-            )
+    for x_mm, y_down_mm in circle_centers_mm(args):
+        center_x = x_mm - args.base_width_mm / 2.0
+        center_y = args.base_height_mm / 2.0 - y_down_mm
+        solids.append(
+            cq.Workplane("XY")
+            .circle(radius_mm)
+            .extrude(args.black_height_mm)
+            .translate((center_x, center_y, args.base_thickness_mm))
+        )
     return solids, 0
+
+
+def add_marker_cell_solids(
+    cq,
+    solids: list,
+    args: argparse.Namespace,
+    marker_id: int,
+    marker_x_mm: float,
+    marker_y_mm: float,
+    no_gaps: bool,
+) -> int:
+    cells = marker_black_cells(marker_id, args.dictionary)
+    cell_mm = args.aruco_marker_mm / cells.shape[0]
+    skipped = 0
+
+    if no_gaps:
+        for cell_row in range(cells.shape[0]):
+            for cell_col in range(cells.shape[1]):
+                if not cells[cell_row, cell_col]:
+                    continue
+                left = args.black_shrink_mm if cell_col == 0 or not cells[cell_row, cell_col - 1] else 0.0
+                right = args.black_shrink_mm if cell_col == cells.shape[1] - 1 or not cells[cell_row, cell_col + 1] else 0.0
+                top = args.black_shrink_mm if cell_row == 0 or not cells[cell_row - 1, cell_col] else 0.0
+                bottom = args.black_shrink_mm if cell_row == cells.shape[0] - 1 or not cells[cell_row + 1, cell_col] else 0.0
+                ok = add_box(
+                    cq,
+                    solids,
+                    args.base_width_mm,
+                    args.base_height_mm,
+                    args.base_thickness_mm,
+                    args.black_height_mm,
+                    marker_x_mm + cell_col * cell_mm + left,
+                    marker_y_mm + cell_row * cell_mm + top,
+                    cell_mm - left - right,
+                    cell_mm - top - bottom,
+                    args.min_feature_mm,
+                )
+                skipped += 0 if ok else 1
+        return skipped
+
+    for cell_row in range(cells.shape[0]):
+        run_start = -1
+        for cell_col in range(cells.shape[1] + 1):
+            is_black = cell_col < cells.shape[1] and cells[cell_row, cell_col]
+            if is_black and run_start < 0:
+                run_start = cell_col
+            elif not is_black and run_start >= 0:
+                run_len = cell_col - run_start
+                ok = add_box(
+                    cq,
+                    solids,
+                    args.base_width_mm,
+                    args.base_height_mm,
+                    args.base_thickness_mm,
+                    args.black_height_mm,
+                    marker_x_mm + run_start * cell_mm + args.black_shrink_mm,
+                    marker_y_mm + cell_row * cell_mm + args.black_shrink_mm,
+                    run_len * cell_mm - 2.0 * args.black_shrink_mm,
+                    cell_mm - 2.0 * args.black_shrink_mm,
+                    args.min_feature_mm,
+                )
+                skipped += 0 if ok else 1
+                run_start = -1
+    return skipped
+
+
+def make_aruco_marker_board_step_solids(cq, args: argparse.Namespace, no_gaps: bool) -> tuple[list, int]:
+    solids: list = []
+    skipped = 0
+    for marker_id, x_mm, y_mm in aruco_marker_origins_mm(args):
+        skipped += add_marker_cell_solids(cq, solids, args, marker_id, x_mm, y_mm, no_gaps)
+    return solids, skipped
 
 
 def add_polygon_prism(
@@ -1174,10 +1320,16 @@ def write_step(output_dir: Path, prefix: str, args: argparse.Namespace) -> tuple
         )
     elif args.board_type == "chessboard" and args.black_geometry in {"rectangles", "rectangles_no_gaps"}:
         black_solids, skipped = make_chessboard_step_solids(cq, args)
-    elif args.board_type == "circle_grid" and args.black_geometry in {"rectangles", "rectangles_no_gaps"}:
+    elif args.board_type in {"circle_grid", "asymmetric_circle_grid"} and args.black_geometry in {"rectangles", "rectangles_no_gaps"}:
         black_solids, skipped = make_circle_grid_step_solids(cq, args)
     elif args.board_type == "framed_circle_grid" and args.black_geometry in {"rectangles", "rectangles_no_gaps"}:
         black_solids, skipped = make_framed_circle_grid_step_solids(cq, args)
+    elif args.board_type == "aruco_marker_board" and args.black_geometry in {"rectangles", "rectangles_no_gaps"}:
+        black_solids, skipped = make_aruco_marker_board_step_solids(
+            cq,
+            args,
+            no_gaps=args.black_geometry == "rectangles_no_gaps",
+        )
     else:
         board_image, px_to_mm, _, _ = render_board_image(args)
         black_solids, skipped = make_contour_step_solids(
@@ -1373,6 +1525,11 @@ def make_args(**overrides) -> argparse.Namespace:
         "circles_y": CIRCLES_Y,
         "circle_spacing_mm": CIRCLE_SPACING_MM,
         "circle_diameter_mm": CIRCLE_DIAMETER_MM,
+        "markers_x": MARKERS_X,
+        "markers_y": MARKERS_Y,
+        "aruco_marker_mm": ARUCO_MARKER_MM,
+        "marker_gap_mm": MARKER_GAP_MM,
+        "first_marker_id": FIRST_MARKER_ID,
         "frame_margin_mm": FRAMED_FRAME_MARGIN_MM,
         "frame_width_mm": FRAMED_FRAME_WIDTH_MM,
         "triangle_enabled": FRAMED_TRIANGLE_ENABLED,
@@ -1424,7 +1581,7 @@ def validate_args(args: argparse.Namespace) -> None:
             if args.marker_mm >= args.square_mm:
                 raise ValueError("marker 边长必须小于方格边长。")
 
-    if args.board_type in {"circle_grid", "framed_circle_grid"}:
+    if args.board_type in {"circle_grid", "asymmetric_circle_grid", "framed_circle_grid"}:
         if args.circles_x < 2 or args.circles_y < 2:
             raise ValueError("圆点板圆点数量 X/Y 都必须 >= 2。")
         if args.circle_spacing_mm <= 0.0:
@@ -1433,6 +1590,24 @@ def validate_args(args: argparse.Namespace) -> None:
             raise ValueError("圆点直径必须为正数。")
         if args.circle_diameter_mm >= args.circle_spacing_mm:
             raise ValueError("圆点直径建议小于圆心间距，避免圆点相连。")
+
+    if args.board_type == "aruco_marker_board":
+        if args.markers_x < 1 or args.markers_y < 1:
+            raise ValueError("ArUco 标记板横向/纵向 marker 数量都必须 >= 1。")
+        if args.aruco_marker_mm <= 0.0:
+            raise ValueError("ArUco marker 边长必须为正数。")
+        if args.marker_gap_mm < 0.0:
+            raise ValueError("ArUco marker 间距不能为负数。")
+        if args.first_marker_id < 0:
+            raise ValueError("ArUco 起始 marker id 不能为负数。")
+        dictionary = get_aruco_dictionary(args.dictionary)
+        marker_count = int(dictionary.bytesList.shape[0])
+        required_end_id = args.first_marker_id + args.markers_x * args.markers_y - 1
+        if required_end_id >= marker_count:
+            raise ValueError(
+                f"ArUco marker id 超出字典范围：需要到 {required_end_id}，"
+                f"{args.dictionary} 只有 0..{marker_count - 1}。"
+            )
 
     if args.board_type == "framed_circle_grid":
         if args.frame_margin_mm < 0.0:
@@ -1518,6 +1693,8 @@ if __name__ == "__main__":
         "  python generate_charuco_board.py\n"
         "  python generate_chess_board.py\n"
         "  python generate_circle_grid_board.py\n"
+        "  python generate_asymmetric_circle_grid_board.py\n"
+        "  python generate_aruco_marker_board.py\n"
         "  python generate_halcon_board.py"
     )
 

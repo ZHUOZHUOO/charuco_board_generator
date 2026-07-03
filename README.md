@@ -19,13 +19,23 @@
       对称圆点阵列标定板
     </td>
     <td align="center">
+      <img src="assets/preview_asymmetric_circle_grid.png" alt="非对称圆点阵列标定板" width="360"><br>
+      非对称圆点阵列标定板
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="assets/preview_aruco_marker_board.png" alt="ArUco 标记板" width="360"><br>
+      ArUco 标记板
+    </td>
+    <td align="center">
       <img src="assets/preview_halcon.png" alt="HALCON 标定板" width="360"><br>
       HALCON 标定板
     </td>
   </tr>
 </table>
 
-上面的预览图由脚本默认参数直接生成，用于快速展示项目支持的四类标定板。
+上面的预览图由脚本默认参数直接生成，用于快速展示项目支持的六类标定板。
 
 这是一个独立的标定板生成工具，可以生成：
 
@@ -38,15 +48,17 @@ DESCR HALCON 标定板描述文件
 PS    HALCON PostScript 标定板图像
 ```
 
-## 四个入口脚本
+## 六个入口脚本
 
 每种标定板都有独立脚本，参数不会混在一起：
 
 ```text
-generate_charuco_board.py       ChArUco 标定板
-generate_chess_board.py         普通棋盘格标定板
-generate_circle_grid_board.py   对称圆点阵列标定板
-generate_halcon_board.py        HALCON 标定板
+generate_charuco_board.py                   ChArUco 标定板
+generate_chess_board.py                     普通棋盘格标定板
+generate_circle_grid_board.py               对称圆点阵列标定板
+generate_asymmetric_circle_grid_board.py    非对称圆点阵列标定板
+generate_aruco_marker_board.py              ArUco 标记板
+generate_halcon_board.py                    HALCON 标定板
 ```
 
 共享几何、DXF、STEP 导出逻辑放在：
@@ -76,6 +88,8 @@ cd charuco_board_generator
 .\run_default.ps1 charuco
 .\run_default.ps1 chess
 .\run_default.ps1 circle
+.\run_default.ps1 asym_circle
+.\run_default.ps1 aruco
 .\run_default.ps1 halcon
 ```
 
@@ -177,6 +191,64 @@ BLACK_SHRINK_MM = 0.02
 python generate_circle_grid_board.py --circles-x 11 --circles-y 8 --circle-spacing-mm 20 --circle-diameter-mm 8
 ```
 
+## 生成非对称圆点板
+
+```powershell
+python generate_asymmetric_circle_grid_board.py
+```
+
+常用参数在 `generate_asymmetric_circle_grid_board.py` 顶部：
+
+```python
+CIRCLES_X = 7
+CIRCLES_Y = 9
+CIRCLE_SPACING_MM = 16.0
+CIRCLE_DIAMETER_MM = 8.0
+BASE_WIDTH_MM = 240.0
+BASE_HEIGHT_MM = 180.0
+BASE_THICKNESS_MM = 5.0
+BLACK_HEIGHT_MM = 0.5
+BLACK_SHRINK_MM = 0.02
+```
+
+非对称圆点采用 OpenCV 常见约定：同一行相邻圆心距离为 `2 * CIRCLE_SPACING_MM`，相邻行水平错开 `CIRCLE_SPACING_MM`，垂直行距为 `CIRCLE_SPACING_MM`。
+
+命令行临时覆盖示例：
+
+```powershell
+python generate_asymmetric_circle_grid_board.py --circles-x 7 --circles-y 9 --circle-spacing-mm 16 --circle-diameter-mm 8
+```
+
+## 生成 ArUco 标记板
+
+```powershell
+python generate_aruco_marker_board.py
+```
+
+常用参数在 `generate_aruco_marker_board.py` 顶部：
+
+```python
+MARKERS_X = 5
+MARKERS_Y = 4
+ARUCO_MARKER_MM = 30.0
+MARKER_GAP_MM = 10.0
+FIRST_MARKER_ID = 0
+DICTIONARY = "DICT_5X5"
+BASE_WIDTH_MM = 240.0
+BASE_HEIGHT_MM = 180.0
+BASE_THICKNESS_MM = 5.0
+BLACK_HEIGHT_MM = 0.5
+BLACK_SHRINK_MM = 0.02
+```
+
+脚本会从 `FIRST_MARKER_ID` 开始按行优先顺序连续生成 marker，并检查 marker id 是否超出所选 ArUco 字典范围。
+
+命令行临时覆盖示例：
+
+```powershell
+python generate_aruco_marker_board.py --markers-x 5 --markers-y 4 --aruco-marker-mm 30 --marker-gap-mm 10 --dictionary DICT_5X5
+```
+
 ## 生成 HALCON 标定板
 
 这种标定板对应 HALCON 的 `gen_caltab()` 标准矩形圆点标定板：中间为矩形排列的黑色圆点，外围有黑色外框，左上角有三角方向标识。脚本会按 `gen_caltab(XNum, YNum, MarkDist, DiameterRatio, CalPlateDescr, CalPlatePSFile)` 的参数体系生成 PNG/SVG/DXF/STEP，并额外输出 HALCON 使用的 `.descr` 和 `.ps` 文件。
@@ -213,12 +285,14 @@ python generate_halcon_board.py --x-num 11 --y-num 11 --mark-dist-m 0.02 --diame
 
 ## 输出控制
 
-四个脚本都支持下面这些通用参数：
+六个脚本都支持下面这些通用参数：
 
 ```powershell
 python generate_charuco_board.py --no-step
 python generate_chess_board.py --no-png --no-svg --no-dxf
 python generate_circle_grid_board.py --output-dir outputs_custom --output-prefix my_circle_board
+python generate_asymmetric_circle_grid_board.py --base-thickness-mm 3
+python generate_aruco_marker_board.py --output-prefix my_aruco_board
 python generate_halcon_board.py --base-thickness-mm 3
 ```
 
@@ -244,6 +318,22 @@ by
 (CIRCLES_Y - 1) * CIRCLE_SPACING_MM + CIRCLE_DIAMETER_MM
 ```
 
+非对称圆点板标定区域：
+
+```text
+(2 * (CIRCLES_X - 1) + 1) * CIRCLE_SPACING_MM + CIRCLE_DIAMETER_MM
+by
+(CIRCLES_Y - 1) * CIRCLE_SPACING_MM + CIRCLE_DIAMETER_MM
+```
+
+ArUco 标记板标定区域：
+
+```text
+MARKERS_X * ARUCO_MARKER_MM + (MARKERS_X - 1) * MARKER_GAP_MM
+by
+MARKERS_Y * ARUCO_MARKER_MM + (MARKERS_Y - 1) * MARKER_GAP_MM
+```
+
 HALCON 标定板尺寸由 `gen_caltab()` 参数派生：
 
 ```text
@@ -260,7 +350,7 @@ HALCON 标定板尺寸由 `gen_caltab()` 参数派生：
 
 ## STEP 建模模式
 
-四个脚本都使用 `STEP_GEOMETRY_MODE` 控制 STEP 黑色图案建模方式。
+六个脚本都使用 `STEP_GEOMETRY_MODE` 控制 STEP 黑色图案建模方式。
 
 ChArUco / 棋盘格可选：
 
@@ -274,8 +364,17 @@ contours            旧轮廓模式，保留用于对比。
 圆点板推荐：
 
 ```text
-rectangles_no_gaps  生成真实圆柱凸起。
+rectangles_no_gaps  生成真实圆柱凸起，对称/非对称圆点板都推荐该模式。
 contours_filtered   按图像轮廓生成实体，主要用于对比。
+```
+
+ArUco 标记板推荐：
+
+```text
+rectangles_no_gaps  推荐。相邻黑色单元共享边不内缩，只在黑白交界处内缩。
+rectangles          旧矩形分解。每个黑色行段四周都内缩，可能出现可见缝隙。
+contours_filtered   整体轮廓内缩，并过滤小岛/薄壁碎片。
+contours            旧轮廓模式，保留用于对比。
 ```
 
 HALCON 标定板推荐：
@@ -301,7 +400,7 @@ DXF 默认输出黑色轮廓，并按 `BLACK_SHRINK_MM` 内缩：
 
 DXF 文件使用毫米单位，`$INSUNITS=4`。SolidWorks 中建议将白色区域作为基板，只导入黑色 DXF 作为草图或凸起/凹槽边界。
 
-圆点板的黑色 DXF 使用真正的 `CIRCLE` 实体；HALCON 标定板还会额外输出外框轮廓和左上角三角方向标识轮廓；ChArUco 和棋盘格使用闭合 `LWPOLYLINE` 轮廓。
+对称/非对称圆点板的黑色 DXF 使用真正的 `CIRCLE` 实体；HALCON 标定板还会额外输出外框轮廓和左上角三角方向标识轮廓；ChArUco、ArUco 标记板和棋盘格使用闭合 `LWPOLYLINE` 轮廓。
 
 ## 许可证
 
