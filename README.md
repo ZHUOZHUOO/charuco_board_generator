@@ -1,5 +1,32 @@
 # 标定板生成器
 
+## 功能预览
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="assets/preview_charuco.png" alt="ChArUco 标定板" width="360"><br>
+      ChArUco 标定板
+    </td>
+    <td align="center">
+      <img src="assets/preview_chessboard.png" alt="普通棋盘格标定板" width="360"><br>
+      普通棋盘格标定板
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="assets/preview_circle_grid.png" alt="对称圆点阵列标定板" width="360"><br>
+      对称圆点阵列标定板
+    </td>
+    <td align="center">
+      <img src="assets/preview_halcon.png" alt="HALCON 标定板" width="360"><br>
+      HALCON 标定板
+    </td>
+  </tr>
+</table>
+
+上面的预览图由脚本默认参数直接生成，用于快速展示项目支持的四类标定板。
+
 这是一个独立的标定板生成工具，可以生成：
 
 ```text
@@ -288,6 +315,11 @@ charuco_board_generator/
   generate_circle_grid_board.py
   generate_halcon_board.py
   assets/
+    preview_charuco.png
+    preview_chessboard.png
+    preview_circle_grid.png
+    preview_halcon.png
+    charuco_bambu_slicer.png
   README.md
   requirements.txt
   environment.yml
