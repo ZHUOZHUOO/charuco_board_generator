@@ -67,7 +67,8 @@ BASE_THICKNESS_MM = 5.0
 BLACK_HEIGHT_MM = 0.5
 BLACK_SHRINK_MM = 0.02
 MIN_FEATURE_MM = 1.0
-BLACK_GEOMETRY = "rectangles_no_gaps"
+BLACK_GEOMETRY = "contours_filtered"
+STEP_EXPORT_MODE = "assembly"
 PIXELS_PER_SQUARE = 240
 GENERATE_PNG = True
 GENERATE_SVG = True
@@ -1374,6 +1375,19 @@ def make_contour_step_solids(cq, Polygon, MultiPolygon, unary_union, board_image
     return solids, skipped
 
 
+def solid_to_workplane(cq, solid):
+    if isinstance(solid, cq.Workplane):
+        return solid
+    return cq.Workplane("XY").add(solid)
+
+
+def make_single_solid_model(cq, base, black_solids: list):
+    model = base
+    for solid in black_solids:
+        model = model.union(solid_to_workplane(cq, solid))
+    return model
+
+
 def write_step(output_dir: Path, prefix: str, args: argparse.Namespace) -> tuple[Path, int, int]:
     cq, Polygon, MultiPolygon, unary_union = import_step_dependencies()
     base = cq.Workplane("XY").box(
@@ -1407,19 +1421,26 @@ def write_step(output_dir: Path, prefix: str, args: argparse.Namespace) -> tuple
             filtered=True,
         )
 
-    assembly = cq.Assembly(name=f"{args.board_type}_board")
-    assembly.add(base, name="white_base", color=cq.Color(1.0, 1.0, 1.0))
-    for index, solid in enumerate(black_solids):
-        assembly.add(solid, name=f"black_{index:04d}", color=cq.Color(0.0, 0.0, 0.0))
+    suffix = args.black_geometry
+    if args.step_export_mode == "single_solid":
+        suffix = f"{suffix}_single_solid"
 
     output_path = output_dir / (
         f"{prefix}_base{fmt_token(args.base_thickness_mm)}_"
         f"black{fmt_token(args.black_height_mm)}_"
         f"shrink{fmt_token(args.black_shrink_mm)}_"
-        f"{args.black_geometry}.step"
+        f"{suffix}.step"
     )
     ensure_dir(output_path.parent)
-    assembly.save(str(output_path), exportType="STEP")
+    if args.step_export_mode == "single_solid":
+        model = make_single_solid_model(cq, base, black_solids)
+        cq.exporters.export(model, str(output_path), exportType="STEP")
+    else:
+        assembly = cq.Assembly(name=f"{args.board_type}_board")
+        assembly.add(base, name="white_base", color=cq.Color(1.0, 1.0, 1.0))
+        for index, solid in enumerate(black_solids):
+            assembly.add(solid, name=f"black_{index:04d}", color=cq.Color(0.0, 0.0, 0.0))
+        assembly.save(str(output_path), exportType="STEP")
     return output_path, len(black_solids), skipped
 
 
@@ -1624,6 +1645,7 @@ def make_args(**overrides) -> argparse.Namespace:
         "black_shrink_mm": BLACK_SHRINK_MM,
         "min_feature_mm": MIN_FEATURE_MM,
         "black_geometry": BLACK_GEOMETRY,
+        "step_export_mode": STEP_EXPORT_MODE,
         "pixels_per_square": PIXELS_PER_SQUARE,
         "dxf_color": DXF_COLOR,
         "no_png": not GENERATE_PNG,
@@ -1650,6 +1672,8 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("pixels-per-square 必须为正整数。")
     if args.black_geometry not in {"rectangles_no_gaps", "contours_filtered"}:
         raise ValueError("STEP 建模方式只支持 rectangles_no_gaps 或 contours_filtered。")
+    if args.step_export_mode not in {"assembly", "single_solid"}:
+        raise ValueError("STEP 输出形式只支持 assembly 或 single_solid。")
     if args.marker_border_bits <= 0:
         raise ValueError("marker border bits 必须为正整数。")
 

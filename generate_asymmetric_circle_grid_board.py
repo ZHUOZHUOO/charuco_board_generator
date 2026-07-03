@@ -54,9 +54,14 @@ BLACK_SHRINK_MM = 0.02
 MIN_FEATURE_MM = 1.0
 
 # STEP 黑色图案建模方式：
-# rectangles_no_gaps：推荐。圆点板在该模式下会生成真实圆柱。
-# contours_filtered：按图像轮廓生成实体，主要用于对比，不建议优先使用。
-STEP_GEOMETRY_MODE = "rectangles_no_gaps"
+# contours_filtered：默认。按图像轮廓内缩并过滤小岛/薄壁碎片。
+# rectangles_no_gaps：规则几何模式，圆点会生成真实圆柱。
+STEP_GEOMETRY_MODE = "contours_filtered"
+
+# STEP 输出形式：
+# assembly：默认。白色基板和黑色图案作为多个实体/装配体导出，并保留黑白颜色。
+# single_solid：将白色基板和黑色图案布尔融合为一个整体实体，适合在 SolidWorks 中作为单一零件处理。
+STEP_EXPORT_MODE = "assembly"
 
 # PNG/SVG/DXF 分辨率：每个 spacing 对应的像素数。
 # 只影响 2D 文件精度，不影响 STEP 的真实尺寸。
@@ -94,6 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("rectangles_no_gaps", "contours_filtered"),
         default=STEP_GEOMETRY_MODE,
     )
+    parser.add_argument("--step-export-mode", choices=("assembly", "single_solid"), default=STEP_EXPORT_MODE)
     parser.add_argument("--pixels-per-spacing", type=int, default=PIXELS_PER_SPACING)
     parser.add_argument("--dxf-color", choices=("black", "white", "both"), default=DXF_COLOR)
     parser.add_argument("--no-png", action="store_true", default=not GENERATE_PNG)
@@ -120,6 +126,7 @@ def main(argv: list[str] | None = None) -> int:
         black_shrink_mm=parsed.black_shrink_mm,
         min_feature_mm=parsed.min_feature_mm,
         black_geometry=parsed.step_geometry_mode,
+        step_export_mode=parsed.step_export_mode,
         pixels_per_square=parsed.pixels_per_spacing,
         dxf_color=parsed.dxf_color,
         no_png=parsed.no_png,

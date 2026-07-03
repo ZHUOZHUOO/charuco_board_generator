@@ -248,11 +248,11 @@ BASE_HEIGHT_MM = 180.0
 BASE_THICKNESS_MM = 5.0
 BLACK_HEIGHT_MM = 0.5
 BLACK_SHRINK_MM = 0.02
-STEP_GEOMETRY_MODE = "auto"
+STEP_GEOMETRY_MODE = "contours_filtered"
 ```
 
 脚本会从 `FIRST_MARKER_ID` 开始按行优先顺序连续生成 marker，并检查 marker id 是否超出所选 ArUco 字典范围。
-当 `DICTIONARY` 选择 `DICT_APRILTAG_*` 时，`STEP_GEOMETRY_MODE = "auto"` 会自动使用 `contours_filtered`，减少 AprilTag STEP 模型面数。
+如果需要按普通 ArUco / AprilTag 字典自动切换，也可以手动设置 `STEP_GEOMETRY_MODE = "auto"`。
 
 命令行临时覆盖示例：
 
@@ -445,50 +445,71 @@ HALCON 标定板尺寸由 `gen_caltab()` 参数派生：
 
 基板尺寸必须大于或等于内部标定区域尺寸。
 
-## STEP 建模模式
+## STEP 建模与输出形式
 
-所有生成脚本都使用 `STEP_GEOMETRY_MODE` 控制 STEP 黑色图案建模方式。可选模式有两种：
+所有生成脚本都使用 `STEP_GEOMETRY_MODE` 控制 STEP 黑色图案建模方式。默认使用 `contours_filtered`；可选模式主要有两种：
 
 | 模式 | 适合场景 | 优点 | 代价 |
 | --- | --- | --- | --- |
-| `rectangles_no_gaps` | 棋盘格、圆点板、HALCON 板、普通 ArUco 板 | 尽量使用矩形/圆柱等规则几何；相邻黑色模块共享边，避免内缩缝隙 | 对 AprilTag 这类细碎图案会生成很多实体和面 |
-| `contours_filtered` | Aprilgrid、使用 `DICT_APRILTAG_*` 字典的标记板 | 对整体轮廓内缩并过滤小岛/薄壁碎片；STEP 面数更低，SolidWorks 导入、旋转查看、后续编辑更轻快 | 几何会按轮廓合并，适合建模和打印，不适合作为逐像素结构对比 |
+| `contours_filtered` | 默认模式，适合所有标定板，尤其适合 Aprilgrid / AprilTag | 对整体轮廓内缩并过滤小岛/薄壁碎片；STEP 面数更低，SolidWorks 导入、旋转查看、后续编辑更轻快 | 几何会按轮廓合并，适合建模和打印，不适合作为逐像素结构对比 |
+| `rectangles_no_gaps` | 需要规则矩形/圆柱几何时手动选择 | 尽量使用矩形/圆柱等规则几何；相邻黑色模块共享边，避免内缩缝隙 | 对 AprilTag 这类细碎图案会生成很多实体和面 |
 
 默认策略：
 
 ```text
-ChArUco              auto
-ArUco 标记板         auto
+ChArUco              contours_filtered
+ArUco 标记板         contours_filtered
 Aprilgrid            contours_filtered
-棋盘格               rectangles_no_gaps
-圆点板               rectangles_no_gaps
-非对称圆点板         rectangles_no_gaps
-HALCON 标定板        rectangles_no_gaps
+棋盘格               contours_filtered
+圆点板               contours_filtered
+非对称圆点板         contours_filtered
+HALCON 标定板        contours_filtered
 ```
 
-`auto` 会根据字典自动选择：
+ChArUco / ArUco 标记板仍保留 `auto` 作为可选兼容模式，会根据字典自动选择：
 
 ```text
 普通 ArUco 字典      rectangles_no_gaps
 DICT_APRILTAG_*      contours_filtered
 ```
 
-为什么 AprilTag 默认使用 `contours_filtered`：
+为什么默认使用 `contours_filtered`：
 
 ```text
-AprilTag 内部黑白单元非常碎。
-rectangles_no_gaps 会把许多小单元作为独立实体生成，STEP 文件面数较高。
-contours_filtered 会合并连续黑色轮廓并过滤过小碎片，通常能显著降低 STEP 面数。
+contours_filtered 会合并连续黑色轮廓并过滤过小碎片，通常能降低 STEP 面数。
+AprilTag 内部黑白单元尤其碎，rectangles_no_gaps 会把许多小单元作为独立实体生成。
 例如默认 Aprilgrid：rectangles_no_gaps 约 3004 个黑色实体，contours_filtered 约 108 个黑色实体。
 ```
 
 命令行临时覆盖示例：
 
 ```powershell
-python generate_charuco_board.py --step-geometry-mode contours_filtered
-python generate_aruco_marker_board.py --dictionary DICT_APRILTAG_36H11
+python generate_chess_board.py --step-geometry-mode rectangles_no_gaps
+python generate_aruco_marker_board.py --step-geometry-mode auto --dictionary DICT_APRILTAG_36H11
 python generate_aprilgrid_board.py --step-geometry-mode rectangles_no_gaps
 ```
+
+`STEP_EXPORT_MODE` 控制 STEP 是按装配体导出，还是布尔融合为单一实体：
+
+| 模式 | 默认 | 适合场景 | 注意事项 |
+| --- | --- | --- | --- |
+| `assembly` | 是 | 需要保留黑白颜色、希望在 CAD 中看到白色基板和黑色图案分开的情况 | 会包含多个实体/零件 |
+| `single_solid` | 否 | 希望 SolidWorks 将标定板识别为一个整体零件，减少多实体管理成本 | 黑白颜色不会作为 STEP 装配颜色保留；双色打印仍可在切片软件中按黑色凸起开始的层高分层换色 |
+
+常用参数区可以这样设置：
+
+```python
+STEP_EXPORT_MODE = "single_solid"
+```
+
+命令行临时覆盖示例：
+
+```powershell
+python generate_charuco_board.py --step-export-mode single_solid
+python generate_aprilgrid_board.py --step-export-mode single_solid
+```
+
+单实体导出需要做布尔融合，复杂图案会比 `assembly` 慢一些；Aprilgrid 或 AprilTag 字典建议搭配 `contours_filtered` 使用。
 
 ## DXF 说明
 

@@ -67,6 +67,11 @@ MIN_FEATURE_MM = 1.0
 # rectangles_no_gaps：保留为对比模式，会生成更多细节和更多实体。
 STEP_GEOMETRY_MODE = "contours_filtered"
 
+# STEP 输出形式：
+# assembly：默认。白色基板和黑色图案作为多个实体/装配体导出，并保留黑白颜色。
+# single_solid：将白色基板和黑色图案布尔融合为一个整体实体，适合在 SolidWorks 中作为单一零件处理。
+STEP_EXPORT_MODE = "assembly"
+
 # PNG/SVG/DXF 分辨率：每个 tag 边长对应的像素数。
 # 只影响 2D 文件精度，不影响 STEP 的真实尺寸。
 PIXELS_PER_TAG = 240
@@ -107,6 +112,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("rectangles_no_gaps", "contours_filtered"),
         default=STEP_GEOMETRY_MODE,
     )
+    parser.add_argument("--step-export-mode", choices=("assembly", "single_solid"), default=STEP_EXPORT_MODE)
     parser.add_argument("--pixels-per-tag", type=int, default=PIXELS_PER_TAG)
     parser.add_argument("--dxf-color", choices=("black", "white", "both"), default=DXF_COLOR)
     parser.add_argument("--aprilgrid-yaml-file", default="")
@@ -140,6 +146,7 @@ def main(argv: list[str] | None = None) -> int:
         black_shrink_mm=parsed.black_shrink_mm,
         min_feature_mm=parsed.min_feature_mm,
         black_geometry=parsed.step_geometry_mode,
+        step_export_mode=parsed.step_export_mode,
         pixels_per_square=parsed.pixels_per_tag,
         dxf_color=parsed.dxf_color,
         no_png=parsed.no_png,
