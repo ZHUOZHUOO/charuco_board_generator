@@ -64,6 +64,14 @@ python generate_charuco_board.py
 
 注意：生成 STEP 需要 `cadquery` 和 `shapely`。如果只生成 PNG/SVG/DXF，也仍建议使用同一套依赖，避免环境差异。
 
+## 双色 3D 打印效果
+
+生成的 STEP 模型包含白色基板和黑色凸起图案，适合直接导入拓竹切片软件/Bambu Studio。切片后在黑色图案开始的层高位置设置分层换色，底层使用白色耗材，图案层使用黑色耗材，就可以打印出黑白双色标定板。
+
+下面是 ChArUco 标定板在拓竹切片软件中的预览效果：
+
+![拓竹切片软件中的 ChArUco 双色标定板预览](assets/charuco_bambu_slicer.png)
+
 ## 生成 ChArUco 标定板
 
 ```powershell
@@ -279,6 +287,7 @@ charuco_board_generator/
   generate_chess_board.py
   generate_circle_grid_board.py
   generate_halcon_board.py
+  assets/
   README.md
   requirements.txt
   environment.yml
