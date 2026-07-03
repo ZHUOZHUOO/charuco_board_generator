@@ -48,9 +48,7 @@ MIN_FEATURE_MM = 1.0
 
 # STEP 黑色图案建模方式：
 # rectangles_no_gaps：推荐。相邻黑色模块共享边不内缩，只在黑白交界处内缩。
-# rectangles：旧矩形分解。每个矩形四周都内缩，可能产生可见缝隙。
 # contours_filtered：按整体轮廓内缩并过滤小岛/薄壁碎片。
-# contours：旧轮廓模式，保留用于对比。
 STEP_GEOMETRY_MODE = "rectangles_no_gaps"
 
 # PNG/SVG/DXF 分辨率：每个棋盘方格对应的像素数。
@@ -85,7 +83,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-feature-mm", type=float, default=MIN_FEATURE_MM)
     parser.add_argument(
         "--step-geometry-mode",
-        choices=("rectangles", "rectangles_no_gaps", "contours", "contours_filtered"),
+        choices=("rectangles_no_gaps", "contours_filtered"),
         default=STEP_GEOMETRY_MODE,
     )
     parser.add_argument("--pixels-per-square", type=int, default=PIXELS_PER_SQUARE)

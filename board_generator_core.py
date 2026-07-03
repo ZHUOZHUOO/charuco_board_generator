@@ -920,7 +920,7 @@ def add_box(
     return True
 
 
-def make_rectangle_step_solids(cq, board: cv2.aruco.CharucoBoard, args: argparse.Namespace, no_gaps: bool) -> tuple[list, int]:
+def make_rectangle_step_solids(cq, board: cv2.aruco.CharucoBoard, args: argparse.Namespace) -> tuple[list, int]:
     board_w_mm = args.squares_x * args.square_mm
     board_h_mm = args.squares_y * args.square_mm
     margin_x_mm = (args.base_width_mm - board_w_mm) / 2.0
@@ -956,53 +956,28 @@ def make_rectangle_step_solids(cq, board: cv2.aruco.CharucoBoard, args: argparse
         cells = marker_black_cells(int(marker_id), args.dictionary)
         cell_mm = args.marker_mm / cells.shape[0]
 
-        if no_gaps:
-            for cell_row in range(cells.shape[0]):
-                for cell_col in range(cells.shape[1]):
-                    if not cells[cell_row, cell_col]:
-                        continue
-                    left = args.black_shrink_mm if cell_col == 0 or not cells[cell_row, cell_col - 1] else 0.0
-                    right = args.black_shrink_mm if cell_col == cells.shape[1] - 1 or not cells[cell_row, cell_col + 1] else 0.0
-                    top = args.black_shrink_mm if cell_row == 0 or not cells[cell_row - 1, cell_col] else 0.0
-                    bottom = args.black_shrink_mm if cell_row == cells.shape[0] - 1 or not cells[cell_row + 1, cell_col] else 0.0
-                    ok = add_box(
-                        cq,
-                        solids,
-                        args.base_width_mm,
-                        args.base_height_mm,
-                        args.base_thickness_mm,
-                        args.black_height_mm,
-                        margin_x_mm + marker_x_mm + cell_col * cell_mm + left,
-                        margin_y_mm + marker_y_mm + cell_row * cell_mm + top,
-                        cell_mm - left - right,
-                        cell_mm - top - bottom,
-                        args.min_feature_mm,
-                    )
-                    skipped += 0 if ok else 1
-        else:
-            for cell_row in range(cells.shape[0]):
-                run_start = -1
-                for cell_col in range(cells.shape[1] + 1):
-                    is_black = cell_col < cells.shape[1] and cells[cell_row, cell_col]
-                    if is_black and run_start < 0:
-                        run_start = cell_col
-                    elif not is_black and run_start >= 0:
-                        run_len = cell_col - run_start
-                        ok = add_box(
-                            cq,
-                            solids,
-                            args.base_width_mm,
-                            args.base_height_mm,
-                            args.base_thickness_mm,
-                            args.black_height_mm,
-                            margin_x_mm + marker_x_mm + run_start * cell_mm + args.black_shrink_mm,
-                            margin_y_mm + marker_y_mm + cell_row * cell_mm + args.black_shrink_mm,
-                            run_len * cell_mm - 2.0 * args.black_shrink_mm,
-                            cell_mm - 2.0 * args.black_shrink_mm,
-                            args.min_feature_mm,
-                        )
-                        skipped += 0 if ok else 1
-                        run_start = -1
+        for cell_row in range(cells.shape[0]):
+            for cell_col in range(cells.shape[1]):
+                if not cells[cell_row, cell_col]:
+                    continue
+                left = args.black_shrink_mm if cell_col == 0 or not cells[cell_row, cell_col - 1] else 0.0
+                right = args.black_shrink_mm if cell_col == cells.shape[1] - 1 or not cells[cell_row, cell_col + 1] else 0.0
+                top = args.black_shrink_mm if cell_row == 0 or not cells[cell_row - 1, cell_col] else 0.0
+                bottom = args.black_shrink_mm if cell_row == cells.shape[0] - 1 or not cells[cell_row + 1, cell_col] else 0.0
+                ok = add_box(
+                    cq,
+                    solids,
+                    args.base_width_mm,
+                    args.base_height_mm,
+                    args.base_thickness_mm,
+                    args.black_height_mm,
+                    margin_x_mm + marker_x_mm + cell_col * cell_mm + left,
+                    margin_y_mm + marker_y_mm + cell_row * cell_mm + top,
+                    cell_mm - left - right,
+                    cell_mm - top - bottom,
+                    args.min_feature_mm,
+                )
+                skipped += 0 if ok else 1
     return solids, skipped
 
 
@@ -1059,68 +1034,41 @@ def add_marker_cell_solids(
     marker_id: int,
     marker_x_mm: float,
     marker_y_mm: float,
-    no_gaps: bool,
 ) -> int:
     cells = marker_black_cells(marker_id, args.dictionary)
     cell_mm = args.aruco_marker_mm / cells.shape[0]
     skipped = 0
 
-    if no_gaps:
-        for cell_row in range(cells.shape[0]):
-            for cell_col in range(cells.shape[1]):
-                if not cells[cell_row, cell_col]:
-                    continue
-                left = args.black_shrink_mm if cell_col == 0 or not cells[cell_row, cell_col - 1] else 0.0
-                right = args.black_shrink_mm if cell_col == cells.shape[1] - 1 or not cells[cell_row, cell_col + 1] else 0.0
-                top = args.black_shrink_mm if cell_row == 0 or not cells[cell_row - 1, cell_col] else 0.0
-                bottom = args.black_shrink_mm if cell_row == cells.shape[0] - 1 or not cells[cell_row + 1, cell_col] else 0.0
-                ok = add_box(
-                    cq,
-                    solids,
-                    args.base_width_mm,
-                    args.base_height_mm,
-                    args.base_thickness_mm,
-                    args.black_height_mm,
-                    marker_x_mm + cell_col * cell_mm + left,
-                    marker_y_mm + cell_row * cell_mm + top,
-                    cell_mm - left - right,
-                    cell_mm - top - bottom,
-                    args.min_feature_mm,
-                )
-                skipped += 0 if ok else 1
-        return skipped
-
     for cell_row in range(cells.shape[0]):
-        run_start = -1
-        for cell_col in range(cells.shape[1] + 1):
-            is_black = cell_col < cells.shape[1] and cells[cell_row, cell_col]
-            if is_black and run_start < 0:
-                run_start = cell_col
-            elif not is_black and run_start >= 0:
-                run_len = cell_col - run_start
-                ok = add_box(
-                    cq,
-                    solids,
-                    args.base_width_mm,
-                    args.base_height_mm,
-                    args.base_thickness_mm,
-                    args.black_height_mm,
-                    marker_x_mm + run_start * cell_mm + args.black_shrink_mm,
-                    marker_y_mm + cell_row * cell_mm + args.black_shrink_mm,
-                    run_len * cell_mm - 2.0 * args.black_shrink_mm,
-                    cell_mm - 2.0 * args.black_shrink_mm,
-                    args.min_feature_mm,
-                )
-                skipped += 0 if ok else 1
-                run_start = -1
+        for cell_col in range(cells.shape[1]):
+            if not cells[cell_row, cell_col]:
+                continue
+            left = args.black_shrink_mm if cell_col == 0 or not cells[cell_row, cell_col - 1] else 0.0
+            right = args.black_shrink_mm if cell_col == cells.shape[1] - 1 or not cells[cell_row, cell_col + 1] else 0.0
+            top = args.black_shrink_mm if cell_row == 0 or not cells[cell_row - 1, cell_col] else 0.0
+            bottom = args.black_shrink_mm if cell_row == cells.shape[0] - 1 or not cells[cell_row + 1, cell_col] else 0.0
+            ok = add_box(
+                cq,
+                solids,
+                args.base_width_mm,
+                args.base_height_mm,
+                args.base_thickness_mm,
+                args.black_height_mm,
+                marker_x_mm + cell_col * cell_mm + left,
+                marker_y_mm + cell_row * cell_mm + top,
+                cell_mm - left - right,
+                cell_mm - top - bottom,
+                args.min_feature_mm,
+            )
+            skipped += 0 if ok else 1
     return skipped
 
 
-def make_aruco_marker_board_step_solids(cq, args: argparse.Namespace, no_gaps: bool) -> tuple[list, int]:
+def make_aruco_marker_board_step_solids(cq, args: argparse.Namespace) -> tuple[list, int]:
     solids: list = []
     skipped = 0
     for marker_id, x_mm, y_mm in aruco_marker_origins_mm(args):
-        skipped += add_marker_cell_solids(cq, solids, args, marker_id, x_mm, y_mm, no_gaps)
+        skipped += add_marker_cell_solids(cq, solids, args, marker_id, x_mm, y_mm)
     return solids, skipped
 
 
@@ -1310,26 +1258,17 @@ def write_step(output_dir: Path, prefix: str, args: argparse.Namespace) -> tuple
         centered=(True, True, False),
     )
 
-    if args.board_type == "charuco" and args.black_geometry in {"rectangles", "rectangles_no_gaps"}:
+    if args.board_type == "charuco" and args.black_geometry == "rectangles_no_gaps":
         board = create_charuco_board(args.squares_x, args.squares_y, args.square_mm, args.marker_mm, args.dictionary)
-        black_solids, skipped = make_rectangle_step_solids(
-            cq,
-            board,
-            args,
-            no_gaps=args.black_geometry == "rectangles_no_gaps",
-        )
-    elif args.board_type == "chessboard" and args.black_geometry in {"rectangles", "rectangles_no_gaps"}:
+        black_solids, skipped = make_rectangle_step_solids(cq, board, args)
+    elif args.board_type == "chessboard" and args.black_geometry == "rectangles_no_gaps":
         black_solids, skipped = make_chessboard_step_solids(cq, args)
-    elif args.board_type in {"circle_grid", "asymmetric_circle_grid"} and args.black_geometry in {"rectangles", "rectangles_no_gaps"}:
+    elif args.board_type in {"circle_grid", "asymmetric_circle_grid"} and args.black_geometry == "rectangles_no_gaps":
         black_solids, skipped = make_circle_grid_step_solids(cq, args)
-    elif args.board_type == "framed_circle_grid" and args.black_geometry in {"rectangles", "rectangles_no_gaps"}:
+    elif args.board_type == "framed_circle_grid" and args.black_geometry == "rectangles_no_gaps":
         black_solids, skipped = make_framed_circle_grid_step_solids(cq, args)
-    elif args.board_type == "aruco_marker_board" and args.black_geometry in {"rectangles", "rectangles_no_gaps"}:
-        black_solids, skipped = make_aruco_marker_board_step_solids(
-            cq,
-            args,
-            no_gaps=args.black_geometry == "rectangles_no_gaps",
-        )
+    elif args.board_type == "aruco_marker_board" and args.black_geometry == "rectangles_no_gaps":
+        black_solids, skipped = make_aruco_marker_board_step_solids(cq, args)
     else:
         board_image, px_to_mm, _, _ = render_board_image(args)
         black_solids, skipped = make_contour_step_solids(
@@ -1340,7 +1279,7 @@ def write_step(output_dir: Path, prefix: str, args: argparse.Namespace) -> tuple
             board_image,
             px_to_mm,
             args,
-            filtered=args.black_geometry == "contours_filtered",
+            filtered=True,
         )
 
     assembly = cq.Assembly(name=f"{args.board_type}_board")
@@ -1567,6 +1506,8 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("最小特征尺寸不能为负数。")
     if args.pixels_per_square <= 0:
         raise ValueError("pixels-per-square 必须为正整数。")
+    if args.black_geometry not in {"rectangles_no_gaps", "contours_filtered"}:
+        raise ValueError("STEP 建模方式只支持 rectangles_no_gaps 或 contours_filtered。")
 
     if args.board_type in {"charuco", "chessboard"}:
         if args.squares_x < 2 or args.squares_y < 2:

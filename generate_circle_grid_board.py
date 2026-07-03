@@ -87,7 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-feature-mm", type=float, default=MIN_FEATURE_MM)
     parser.add_argument(
         "--step-geometry-mode",
-        choices=("rectangles_no_gaps", "contours_filtered", "contours"),
+        choices=("rectangles_no_gaps", "contours_filtered"),
         default=STEP_GEOMETRY_MODE,
     )
     parser.add_argument("--pixels-per-spacing", type=int, default=PIXELS_PER_SPACING)

@@ -356,9 +356,7 @@ ChArUco / 棋盘格可选：
 
 ```text
 rectangles_no_gaps  推荐。相邻黑色模块共享边不内缩，只在黑白交界处内缩。
-rectangles          旧矩形分解。每个矩形四周都内缩，可能出现可见缝隙。
 contours_filtered   整体轮廓内缩，并过滤小岛/薄壁碎片。
-contours            旧轮廓模式，保留用于对比。
 ```
 
 圆点板推荐：
@@ -372,9 +370,7 @@ ArUco 标记板推荐：
 
 ```text
 rectangles_no_gaps  推荐。相邻黑色单元共享边不内缩，只在黑白交界处内缩。
-rectangles          旧矩形分解。每个黑色行段四周都内缩，可能出现可见缝隙。
 contours_filtered   整体轮廓内缩，并过滤小岛/薄壁碎片。
-contours            旧轮廓模式，保留用于对比。
 ```
 
 HALCON 标定板推荐：
