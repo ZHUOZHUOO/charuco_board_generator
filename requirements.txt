@@ -1,0 +1,5 @@
+numpy>=1.24
+opencv-contrib-python>=4.7
+cadquery>=2.8
+shapely>=2.1
+

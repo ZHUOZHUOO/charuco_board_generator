@@ -1,0 +1,11 @@
+name: charuco-board-generator
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - numpy>=1.24
+  - opencv>=4.7
+  - cadquery>=2.8
+  - shapely>=2.1
+
