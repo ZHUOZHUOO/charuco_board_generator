@@ -52,6 +52,8 @@ MARKERS_X = 5
 MARKERS_Y = 4
 ARUCO_MARKER_MM = 30.0
 MARKER_GAP_MM = 10.0
+TAG_SPACING_RATIO = MARKER_GAP_MM / ARUCO_MARKER_MM
+MARKER_BORDER_BITS = 1
 FIRST_MARKER_ID = 0
 FRAMED_FRAME_MARGIN_MM = 8.0
 FRAMED_FRAME_WIDTH_MM = 2.0
@@ -88,6 +90,17 @@ ARUCO_DICTIONARIES = {
     "DICT_6X6_100": cv2.aruco.DICT_6X6_100,
     "DICT_6X6_250": cv2.aruco.DICT_6X6_250,
     "DICT_6X6_1000": cv2.aruco.DICT_6X6_1000,
+    "DICT_APRILTAG_16H5": cv2.aruco.DICT_APRILTAG_16H5,
+    "DICT_APRILTAG_25H9": cv2.aruco.DICT_APRILTAG_25H9,
+    "DICT_APRILTAG_36H10": cv2.aruco.DICT_APRILTAG_36H10,
+    "DICT_APRILTAG_36H11": cv2.aruco.DICT_APRILTAG_36H11,
+}
+
+APRILTAG_DICTIONARIES = {
+    "DICT_APRILTAG_16H5",
+    "DICT_APRILTAG_25H9",
+    "DICT_APRILTAG_36H10",
+    "DICT_APRILTAG_36H11",
 }
 
 
@@ -172,6 +185,15 @@ def default_prefix(args: argparse.Namespace) -> str:
             f"{fmt_token(args.aruco_marker_mm)}mm_gap{fmt_token(args.marker_gap_mm)}mm_"
             f"id{args.first_marker_id}_{args.dictionary}"
         )
+    if args.board_type == "aprilgrid":
+        spacing_ratio = getattr(args, "tag_spacing_ratio", args.marker_gap_mm / args.aruco_marker_mm)
+        return (
+            f"aprilgrid_{fmt_token(args.base_width_mm)}x{fmt_token(args.base_height_mm)}_"
+            f"{args.markers_x}x{args.markers_y}_"
+            f"tag{fmt_token(args.aruco_marker_mm)}mm_"
+            f"spacing{fmt_token(spacing_ratio)}_"
+            f"id{args.first_marker_id}_{args.dictionary}"
+        )
     return (
         f"charuco_board_{fmt_token(args.base_width_mm)}x{fmt_token(args.base_height_mm)}_"
         f"{args.squares_x}x{args.squares_y}_"
@@ -193,10 +215,11 @@ def pattern_size_mm(args: argparse.Namespace) -> tuple[float, float]:
             width_center_span + args.circle_diameter_mm,
             (args.circles_y - 1) * args.circle_spacing_mm + args.circle_diameter_mm,
         )
-    if args.board_type == "aruco_marker_board":
+    if args.board_type in {"aruco_marker_board", "aprilgrid"}:
+        extra_gap_mm = args.marker_gap_mm if args.board_type == "aprilgrid" else 0.0
         return (
-            args.markers_x * args.aruco_marker_mm + (args.markers_x - 1) * args.marker_gap_mm,
-            args.markers_y * args.aruco_marker_mm + (args.markers_y - 1) * args.marker_gap_mm,
+            args.markers_x * args.aruco_marker_mm + (args.markers_x - 1) * args.marker_gap_mm + 2.0 * extra_gap_mm,
+            args.markers_y * args.aruco_marker_mm + (args.markers_y - 1) * args.marker_gap_mm + 2.0 * extra_gap_mm,
         )
     return args.squares_x * args.square_mm, args.squares_y * args.square_mm
 
@@ -250,13 +273,28 @@ def render_aruco_marker_board_pattern(args: argparse.Namespace, px_to_mm: float)
     gap_px = int(round(args.marker_gap_mm / px_to_mm))
     dictionary = get_aruco_dictionary(args.dictionary)
     marker_id = args.first_marker_id
+    start_px = gap_px if args.board_type == "aprilgrid" else 0
     for row in range(args.markers_y):
         for col in range(args.markers_x):
-            marker_image = cv2.aruco.generateImageMarker(dictionary, int(marker_id), marker_px, borderBits=1)
-            x0 = col * (marker_px + gap_px)
-            y0 = row * (marker_px + gap_px)
+            marker_image = cv2.aruco.generateImageMarker(
+                dictionary,
+                int(marker_id),
+                marker_px,
+                borderBits=args.marker_border_bits,
+            )
+            x0 = start_px + col * (marker_px + gap_px)
+            y0 = start_px + row * (marker_px + gap_px)
             image[y0 : y0 + marker_px, x0 : x0 + marker_px] = marker_image
             marker_id += 1
+            if args.board_type == "aprilgrid" and gap_px > 0:
+                corner_rects = [
+                    (x0 - gap_px, y0 - gap_px),
+                    (x0 + marker_px, y0 - gap_px),
+                    (x0 + marker_px, y0 + marker_px),
+                    (x0 - gap_px, y0 + marker_px),
+                ]
+                for sx, sy in corner_rects:
+                    image[sy : sy + gap_px, sx : sx + gap_px] = 0
     return image
 
 
@@ -352,7 +390,7 @@ def render_board_image(args: argparse.Namespace) -> tuple[np.ndarray, float, flo
 
     if args.board_type in {"circle_grid", "asymmetric_circle_grid", "framed_circle_grid"}:
         scale_mm = args.circle_spacing_mm
-    elif args.board_type == "aruco_marker_board":
+    elif args.board_type in {"aruco_marker_board", "aprilgrid"}:
         scale_mm = args.aruco_marker_mm
     else:
         scale_mm = args.square_mm
@@ -366,7 +404,7 @@ def render_board_image(args: argparse.Namespace) -> tuple[np.ndarray, float, flo
         pattern_image = render_chessboard_pattern(args, px_to_mm)
     elif args.board_type in {"circle_grid", "asymmetric_circle_grid"}:
         pattern_image = render_circle_grid_pattern(args, px_to_mm)
-    elif args.board_type == "aruco_marker_board":
+    elif args.board_type in {"aruco_marker_board", "aprilgrid"}:
         pattern_image = render_aruco_marker_board_pattern(args, px_to_mm)
     else:
         raise ValueError(f"不支持的标定板类型：{args.board_type}")
@@ -497,6 +535,8 @@ def aruco_marker_origins_mm(args: argparse.Namespace) -> list[tuple[int, float, 
     pattern_w_mm, pattern_h_mm = pattern_size_mm(args)
     origin_x_mm = (args.base_width_mm - pattern_w_mm) / 2.0
     origin_y_mm = (args.base_height_mm - pattern_h_mm) / 2.0
+    marker_start_x_mm = origin_x_mm + (args.marker_gap_mm if args.board_type == "aprilgrid" else 0.0)
+    marker_start_y_mm = origin_y_mm + (args.marker_gap_mm if args.board_type == "aprilgrid" else 0.0)
     markers = []
     marker_id = args.first_marker_id
     for row in range(args.markers_y):
@@ -504,12 +544,37 @@ def aruco_marker_origins_mm(args: argparse.Namespace) -> list[tuple[int, float, 
             markers.append(
                 (
                     marker_id,
-                    origin_x_mm + col * (args.aruco_marker_mm + args.marker_gap_mm),
-                    origin_y_mm + row * (args.aruco_marker_mm + args.marker_gap_mm),
+                    marker_start_x_mm + col * (args.aruco_marker_mm + args.marker_gap_mm),
+                    marker_start_y_mm + row * (args.aruco_marker_mm + args.marker_gap_mm),
                 )
             )
             marker_id += 1
     return markers
+
+
+def aprilgrid_corner_square_rects_mm(args: argparse.Namespace, shrink_mm: float = 0.0) -> list[tuple[float, float, float, float]]:
+    if args.board_type != "aprilgrid" or args.marker_gap_mm <= 0.0:
+        return []
+    square_mm = args.marker_gap_mm - 2.0 * shrink_mm
+    if square_mm <= 0.0:
+        return []
+
+    rects = []
+    seen: set[tuple[int, int]] = set()
+    for _, marker_x_mm, marker_y_mm in aruco_marker_origins_mm(args):
+        corners = [
+            (marker_x_mm - args.marker_gap_mm, marker_y_mm - args.marker_gap_mm),
+            (marker_x_mm + args.aruco_marker_mm, marker_y_mm - args.marker_gap_mm),
+            (marker_x_mm + args.aruco_marker_mm, marker_y_mm + args.aruco_marker_mm),
+            (marker_x_mm - args.marker_gap_mm, marker_y_mm + args.aruco_marker_mm),
+        ]
+        for x_mm, y_mm in corners:
+            key = (round(x_mm * 1_000_000), round(y_mm * 1_000_000))
+            if key in seen:
+                continue
+            seen.add(key)
+            rects.append((x_mm + shrink_mm, y_mm + shrink_mm, square_mm, square_mm))
+    return rects
 
 
 def circle_grid_svg_elements(args: argparse.Namespace, radius_delta_mm: float = 0.0) -> str:
@@ -855,9 +920,15 @@ def write_dxfs(
 
 def marker_grid_size(dictionary_name: str) -> int:
     match = re.search(r"DICT_(\d+)X\1", dictionary_name)
-    if not match:
-        raise ValueError(f"无法从字典名称推断 marker 网格尺寸：{dictionary_name}")
-    return int(match.group(1))
+    if match:
+        return int(match.group(1))
+    apriltag_match = re.search(r"DICT_APRILTAG_(\d+)H\d+", dictionary_name, flags=re.IGNORECASE)
+    if apriltag_match:
+        cell_count = int(apriltag_match.group(1))
+        grid_size = int(math.isqrt(cell_count))
+        if grid_size * grid_size == cell_count:
+            return grid_size
+    raise ValueError(f"无法从字典名称推断 marker 网格尺寸：{dictionary_name}")
 
 
 def marker_black_cells(marker_id: int, dictionary_name: str, border_bits: int = 1) -> np.ndarray:
@@ -1035,7 +1106,7 @@ def add_marker_cell_solids(
     marker_x_mm: float,
     marker_y_mm: float,
 ) -> int:
-    cells = marker_black_cells(marker_id, args.dictionary)
+    cells = marker_black_cells(marker_id, args.dictionary, args.marker_border_bits)
     cell_mm = args.aruco_marker_mm / cells.shape[0]
     skipped = 0
 
@@ -1069,6 +1140,21 @@ def make_aruco_marker_board_step_solids(cq, args: argparse.Namespace) -> tuple[l
     skipped = 0
     for marker_id, x_mm, y_mm in aruco_marker_origins_mm(args):
         skipped += add_marker_cell_solids(cq, solids, args, marker_id, x_mm, y_mm)
+    for x_mm, y_mm, width_mm, depth_mm in aprilgrid_corner_square_rects_mm(args, args.black_shrink_mm):
+        ok = add_box(
+            cq,
+            solids,
+            args.base_width_mm,
+            args.base_height_mm,
+            args.base_thickness_mm,
+            args.black_height_mm,
+            x_mm,
+            y_mm,
+            width_mm,
+            depth_mm,
+            args.min_feature_mm,
+        )
+        skipped += 0 if ok else 1
     return solids, skipped
 
 
@@ -1267,7 +1353,7 @@ def write_step(output_dir: Path, prefix: str, args: argparse.Namespace) -> tuple
         black_solids, skipped = make_circle_grid_step_solids(cq, args)
     elif args.board_type == "framed_circle_grid" and args.black_geometry == "rectangles_no_gaps":
         black_solids, skipped = make_framed_circle_grid_step_solids(cq, args)
-    elif args.board_type == "aruco_marker_board" and args.black_geometry == "rectangles_no_gaps":
+    elif args.board_type in {"aruco_marker_board", "aprilgrid"} and args.black_geometry == "rectangles_no_gaps":
         black_solids, skipped = make_aruco_marker_board_step_solids(cq, args)
     else:
         board_image, px_to_mm, _, _ = render_board_image(args)
@@ -1450,6 +1536,21 @@ def write_halcon_ps(output_dir: Path, args: argparse.Namespace, file_name: str |
     return output_path
 
 
+def write_aprilgrid_yaml(output_dir: Path, args: argparse.Namespace, file_name: str | Path) -> Path:
+    output_path = resolve_output_file(output_dir, file_name)
+    tag_size_m = args.aruco_marker_mm / 1000.0
+    tag_spacing_ratio = getattr(args, "tag_spacing_ratio", args.marker_gap_mm / args.aruco_marker_mm)
+    lines = [
+        "target_type: 'aprilgrid'",
+        f"tagCols: {args.markers_x}",
+        f"tagRows: {args.markers_y}",
+        f"tagSize: {fmt_meter(tag_size_m)}",
+        f"tagSpacing: {fmt_meter(tag_spacing_ratio)}",
+    ]
+    output_path.write_text("\n".join(lines) + "\n", encoding="ascii")
+    return output_path
+
+
 def make_args(**overrides) -> argparse.Namespace:
     values = {
         "output_dir": OUTPUT_DIR,
@@ -1468,6 +1569,8 @@ def make_args(**overrides) -> argparse.Namespace:
         "markers_y": MARKERS_Y,
         "aruco_marker_mm": ARUCO_MARKER_MM,
         "marker_gap_mm": MARKER_GAP_MM,
+        "tag_spacing_ratio": TAG_SPACING_RATIO,
+        "marker_border_bits": MARKER_BORDER_BITS,
         "first_marker_id": FIRST_MARKER_ID,
         "frame_margin_mm": FRAMED_FRAME_MARGIN_MM,
         "frame_width_mm": FRAMED_FRAME_WIDTH_MM,
@@ -1508,6 +1611,8 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("pixels-per-square 必须为正整数。")
     if args.black_geometry not in {"rectangles_no_gaps", "contours_filtered"}:
         raise ValueError("STEP 建模方式只支持 rectangles_no_gaps 或 contours_filtered。")
+    if args.marker_border_bits <= 0:
+        raise ValueError("marker border bits 必须为正整数。")
 
     if args.board_type in {"charuco", "chessboard"}:
         if args.squares_x < 2 or args.squares_y < 2:
@@ -1532,15 +1637,18 @@ def validate_args(args: argparse.Namespace) -> None:
         if args.circle_diameter_mm >= args.circle_spacing_mm:
             raise ValueError("圆点直径建议小于圆心间距，避免圆点相连。")
 
-    if args.board_type == "aruco_marker_board":
+    if args.board_type in {"aruco_marker_board", "aprilgrid"}:
         if args.markers_x < 1 or args.markers_y < 1:
-            raise ValueError("ArUco 标记板横向/纵向 marker 数量都必须 >= 1。")
+            raise ValueError("标记板横向/纵向 marker 数量都必须 >= 1。")
         if args.aruco_marker_mm <= 0.0:
-            raise ValueError("ArUco marker 边长必须为正数。")
+            raise ValueError("marker 边长必须为正数。")
         if args.marker_gap_mm < 0.0:
-            raise ValueError("ArUco marker 间距不能为负数。")
+            raise ValueError("marker 间距不能为负数。")
         if args.first_marker_id < 0:
-            raise ValueError("ArUco 起始 marker id 不能为负数。")
+            raise ValueError("起始 marker id 不能为负数。")
+        if args.board_type == "aprilgrid" and args.dictionary not in APRILTAG_DICTIONARIES:
+            supported = ", ".join(sorted(APRILTAG_DICTIONARIES))
+            raise ValueError(f"Aprilgrid 只能使用 AprilTag 字典。可选：{supported}")
         dictionary = get_aruco_dictionary(args.dictionary)
         marker_count = int(dictionary.bytesList.shape[0])
         required_end_id = args.first_marker_id + args.markers_x * args.markers_y - 1
@@ -1636,6 +1744,7 @@ if __name__ == "__main__":
         "  python generate_circle_grid_board.py\n"
         "  python generate_asymmetric_circle_grid_board.py\n"
         "  python generate_aruco_marker_board.py\n"
+        "  python generate_aprilgrid_board.py\n"
         "  python generate_halcon_board.py"
     )
 

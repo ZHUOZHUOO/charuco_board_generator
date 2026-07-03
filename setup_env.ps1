@@ -24,6 +24,7 @@ try {
     Write-Host "  python generate_circle_grid_board.py"
     Write-Host "  python generate_asymmetric_circle_grid_board.py"
     Write-Host "  python generate_aruco_marker_board.py"
+    Write-Host "  python generate_aprilgrid_board.py"
     Write-Host "  python generate_halcon_board.py"
 } finally {
     Pop-Location

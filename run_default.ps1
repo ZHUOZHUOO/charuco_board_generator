@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("charuco", "chess", "circle", "asym_circle", "aruco", "halcon")]
+    [ValidateSet("charuco", "chess", "circle", "asym_circle", "aruco", "aprilgrid", "halcon")]
     [string]$Board = "charuco"
 )
 
@@ -11,6 +11,7 @@ $scripts = @{
     circle      = "generate_circle_grid_board.py"
     asym_circle = "generate_asymmetric_circle_grid_board.py"
     aruco       = "generate_aruco_marker_board.py"
+    aprilgrid   = "generate_aprilgrid_board.py"
     halcon      = "generate_halcon_board.py"
 }
 
