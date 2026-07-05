@@ -63,9 +63,9 @@ BLACK_SHRINK_MM = 0.02
 MIN_FEATURE_MM = 1.0
 
 # STEP 黑色图案建模方式：
-# contours_filtered：默认。AprilTag 图案细节很多，用轮廓过滤模式可明显减少 STEP 面数。
-# rectangles_no_gaps：保留为对比模式，会生成更多细节和更多实体。
-STEP_GEOMETRY_MODE = "contours_filtered"
+# rectangles_no_gaps：默认。保留 AprilTag 单元的规则矩形几何。
+# contours_filtered：低面数模式，AprilTag 图案细节很多时更适合 single_solid。
+STEP_GEOMETRY_MODE = "rectangles_no_gaps"
 
 # STEP 输出形式：
 # assembly：默认。白色基板和黑色图案作为多个实体/装配体导出，并保留黑白颜色。

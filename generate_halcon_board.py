@@ -50,9 +50,9 @@ BLACK_SHRINK_MM = 0.02
 MIN_FEATURE_MM = 1.0
 
 # STEP 黑色图案建模方式：
-# contours_filtered：默认。按图像轮廓内缩并过滤小岛/薄壁碎片。
-# rectangles_no_gaps：规则几何模式，圆点为圆柱，外框和三角标识为规则凸起。
-STEP_GEOMETRY_MODE = "contours_filtered"
+# rectangles_no_gaps：默认。圆点为圆柱，外框和三角标识为规则凸起。
+# contours_filtered：按图像轮廓内缩并过滤小岛/薄壁碎片，适合低面数 STEP。
+STEP_GEOMETRY_MODE = "rectangles_no_gaps"
 
 # STEP 输出形式：
 # assembly：默认。白色基板和黑色图案作为多个实体/装配体导出，并保留黑白颜色。

@@ -66,8 +66,9 @@ BASE_THICKNESS_MM = 5.0
 BLACK_HEIGHT_MM = 0.5
 BLACK_SHRINK_MM = 0.02
 MIN_FEATURE_MM = 1.0
-BLACK_GEOMETRY = "contours_filtered"
+BLACK_GEOMETRY = "rectangles_no_gaps"
 STEP_EXPORT_MODE = "assembly"
+MAX_SINGLE_SOLID_BOOLEAN_SOLIDS = 800
 PIXELS_PER_SQUARE = 240
 GENERATE_PNG = True
 GENERATE_SVG = True
@@ -1030,7 +1031,7 @@ def add_box(
     return True
 
 
-def make_rectangle_step_solids(cq, board: cv2.aruco.CharucoBoard, args: argparse.Namespace) -> tuple[list, int]:
+def make_rectangle_step_solids(cq, Polygon, MultiPolygon, unary_union, board: cv2.aruco.CharucoBoard, args: argparse.Namespace) -> tuple[list, int]:
     board_w_mm = args.squares_x * args.square_mm
     board_h_mm = args.squares_y * args.square_mm
     margin_x_mm = (args.base_width_mm - board_w_mm) / 2.0
@@ -1065,29 +1066,18 @@ def make_rectangle_step_solids(cq, board: cv2.aruco.CharucoBoard, args: argparse
         marker_y_mm = float(np.min(points[:, 1]))
         cells = marker_black_cells(int(marker_id), args.dictionary)
         cell_mm = args.marker_mm / cells.shape[0]
-
-        for cell_row in range(cells.shape[0]):
-            for cell_col in range(cells.shape[1]):
-                if not cells[cell_row, cell_col]:
-                    continue
-                left = args.black_shrink_mm if cell_col == 0 or not cells[cell_row, cell_col - 1] else 0.0
-                right = args.black_shrink_mm if cell_col == cells.shape[1] - 1 or not cells[cell_row, cell_col + 1] else 0.0
-                top = args.black_shrink_mm if cell_row == 0 or not cells[cell_row - 1, cell_col] else 0.0
-                bottom = args.black_shrink_mm if cell_row == cells.shape[0] - 1 or not cells[cell_row + 1, cell_col] else 0.0
-                ok = add_box(
-                    cq,
-                    solids,
-                    args.base_width_mm,
-                    args.base_height_mm,
-                    args.base_thickness_mm,
-                    args.black_height_mm,
-                    margin_x_mm + marker_x_mm + cell_col * cell_mm + left,
-                    margin_y_mm + marker_y_mm + cell_row * cell_mm + top,
-                    cell_mm - left - right,
-                    cell_mm - top - bottom,
-                    args.min_feature_mm,
-                )
-                skipped += 0 if ok else 1
+        skipped += add_cell_component_solids(
+            cq,
+            Polygon,
+            MultiPolygon,
+            unary_union,
+            solids,
+            args,
+            cells,
+            cell_mm,
+            margin_x_mm + marker_x_mm,
+            margin_y_mm + marker_y_mm,
+        )
     return solids, skipped
 
 
@@ -1137,48 +1127,135 @@ def make_circle_grid_step_solids(cq, args: argparse.Namespace) -> tuple[list, in
     return solids, 0
 
 
-def add_marker_cell_solids(
+def greedy_mask_rectangles(mask: np.ndarray) -> list[tuple[int, int, int, int]]:
+    remaining = mask.astype(bool).copy()
+    rectangles: list[tuple[int, int, int, int]] = []
+    rows, cols = remaining.shape
+    while remaining.any():
+        best: tuple[int, int, int, int] | None = None
+        best_area = 0
+        ys, xs = np.where(remaining)
+        for row, col in zip(ys, xs):
+            max_width = 0
+            while col + max_width < cols and remaining[row, col + max_width]:
+                max_width += 1
+
+            width = max_width
+            scan_row = row
+            while scan_row < rows and width > 0:
+                row_width = 0
+                while row_width < width and remaining[scan_row, col + row_width]:
+                    row_width += 1
+                width = min(width, row_width)
+                if width == 0:
+                    break
+                height = scan_row - row + 1
+                area = width * height
+                if area > best_area:
+                    best_area = area
+                    best = (row, col, height, width)
+                scan_row += 1
+
+        if best is None:
+            break
+        row, col, height, width = best
+        remaining[row : row + height, col : col + width] = False
+        rectangles.append(best)
+    return rectangles
+
+
+def rectangle_edge_shrink(cells: np.ndarray, row: int, col: int, height: int, width: int, shrink_mm: float) -> tuple[float, float, float, float]:
+    top_has_neighbor = row > 0 and bool(np.any(cells[row - 1, col : col + width]))
+    bottom_has_neighbor = row + height < cells.shape[0] and bool(np.any(cells[row + height, col : col + width]))
+    left_has_neighbor = col > 0 and bool(np.any(cells[row : row + height, col - 1]))
+    right_has_neighbor = col + width < cells.shape[1] and bool(np.any(cells[row : row + height, col + width]))
+    left = 0.0 if left_has_neighbor else shrink_mm
+    right = 0.0 if right_has_neighbor else shrink_mm
+    top = 0.0 if top_has_neighbor else shrink_mm
+    bottom = 0.0 if bottom_has_neighbor else shrink_mm
+    return left, right, top, bottom
+
+
+def add_cell_rectangle_solids(
     cq,
     solids: list,
     args: argparse.Namespace,
-    marker_id: int,
+    active_mask: np.ndarray,
+    neighbor_mask: np.ndarray,
+    cell_mm: float,
     marker_x_mm: float,
     marker_y_mm: float,
 ) -> int:
-    cells = marker_black_cells(marker_id, args.dictionary, args.marker_border_bits)
-    cell_mm = args.aruco_marker_mm / cells.shape[0]
     skipped = 0
-
-    for cell_row in range(cells.shape[0]):
-        for cell_col in range(cells.shape[1]):
-            if not cells[cell_row, cell_col]:
-                continue
-            left = args.black_shrink_mm if cell_col == 0 or not cells[cell_row, cell_col - 1] else 0.0
-            right = args.black_shrink_mm if cell_col == cells.shape[1] - 1 or not cells[cell_row, cell_col + 1] else 0.0
-            top = args.black_shrink_mm if cell_row == 0 or not cells[cell_row - 1, cell_col] else 0.0
-            bottom = args.black_shrink_mm if cell_row == cells.shape[0] - 1 or not cells[cell_row + 1, cell_col] else 0.0
-            ok = add_box(
-                cq,
-                solids,
-                args.base_width_mm,
-                args.base_height_mm,
-                args.base_thickness_mm,
-                args.black_height_mm,
-                marker_x_mm + cell_col * cell_mm + left,
-                marker_y_mm + cell_row * cell_mm + top,
-                cell_mm - left - right,
-                cell_mm - top - bottom,
-                args.min_feature_mm,
-            )
-            skipped += 0 if ok else 1
+    for row, col, height, width in greedy_mask_rectangles(active_mask):
+        left, right, top, bottom = rectangle_edge_shrink(neighbor_mask, row, col, height, width, args.black_shrink_mm)
+        ok = add_box(
+            cq,
+            solids,
+            args.base_width_mm,
+            args.base_height_mm,
+            args.base_thickness_mm,
+            args.black_height_mm,
+            marker_x_mm + col * cell_mm + left,
+            marker_y_mm + row * cell_mm + top,
+            width * cell_mm - left - right,
+            height * cell_mm - top - bottom,
+            args.min_feature_mm,
+        )
+        skipped += 0 if ok else 1
     return skipped
 
 
-def make_aruco_marker_board_step_solids(cq, args: argparse.Namespace) -> tuple[list, int]:
+def add_cell_component_solids(
+    cq,
+    Polygon,
+    MultiPolygon,
+    unary_union,
+    solids: list,
+    args: argparse.Namespace,
+    cells: np.ndarray,
+    cell_mm: float,
+    marker_x_mm: float,
+    marker_y_mm: float,
+) -> int:
+    skipped = 0
+    labels_count, labels = cv2.connectedComponents(cells.astype(np.uint8), connectivity=4)
+    for label in range(1, labels_count):
+        component_mask = labels == label
+        polygons = component_polygons(Polygon, MultiPolygon, component_mask, cell_mm, marker_x_mm, marker_y_mm)
+        geometry = unary_union(polygons) if polygons else Polygon()
+        if args.black_shrink_mm > 0.0:
+            geometry = geometry.buffer(-args.black_shrink_mm, join_style=2, mitre_limit=5.0)
+        if not geometry.is_valid:
+            geometry = geometry.buffer(0)
+
+        component_polys = iter_polygons(geometry, Polygon, MultiPolygon)
+        if not component_polys:
+            skipped += int(np.any(component_mask))
+            continue
+
+        for polygon in component_polys:
+            if not polygon_feature_large_enough(polygon, args.min_feature_mm):
+                skipped += 1
+                continue
+            try:
+                if polygon.interiors:
+                    solids.append(make_polygon_prism_with_cuts(cq, Polygon, polygon, args))
+                else:
+                    exterior = [(float(x), float(y)) for x, y in list(polygon.exterior.coords)[:-1]]
+                    solids.append(make_polyline_prism(cq, exterior, args, args.base_thickness_mm, args.black_height_mm))
+            except Exception:
+                skipped += 1
+    return skipped
+
+
+def make_aruco_marker_board_step_solids(cq, Polygon, MultiPolygon, unary_union, args: argparse.Namespace) -> tuple[list, int]:
     solids: list = []
     skipped = 0
     for marker_id, x_mm, y_mm in aruco_marker_origins_mm(args):
-        skipped += add_marker_cell_solids(cq, solids, args, marker_id, x_mm, y_mm)
+        cells = marker_black_cells(marker_id, args.dictionary, args.marker_border_bits)
+        cell_mm = args.aruco_marker_mm / cells.shape[0]
+        skipped += add_cell_component_solids(cq, Polygon, MultiPolygon, unary_union, solids, args, cells, cell_mm, x_mm, y_mm)
     for x_mm, y_mm, width_mm, depth_mm in aprilgrid_corner_square_rects_mm(args, args.black_shrink_mm):
         ok = add_box(
             cq,
@@ -1281,6 +1358,67 @@ def iter_polygons(geometry, Polygon, MultiPolygon) -> list:
     return polygons
 
 
+def component_polygons(
+    Polygon,
+    MultiPolygon,
+    component_mask: np.ndarray,
+    px_to_mm: float,
+    origin_x_mm: float = 0.0,
+    origin_y_mm: float = 0.0,
+) -> list:
+    positive_loops: list[dict[str, object]] = []
+    negative_loops: list[dict[str, object]] = []
+    for loop in mask_to_boundary_loops(component_mask):
+        raw_points = loop[:-1] if loop and loop[0] == loop[-1] else loop
+        if len(raw_points) < 3:
+            continue
+        raw_area = polygon_area([(float(x), float(y)) for x, y in raw_points])
+        points_mm = [(origin_x_mm + x * px_to_mm, origin_y_mm + y * px_to_mm) for x, y in raw_points]
+        polygon = Polygon(points_mm)
+        if not polygon.is_valid:
+            polygon = polygon.buffer(0)
+        item = {
+            "points": points_mm,
+            "polygon": polygon,
+            "area": abs(polygon.area),
+            "sample": polygon.representative_point(),
+            "holes": [],
+        }
+        if raw_area > 0.0:
+            positive_loops.append(item)
+        else:
+            negative_loops.append(item)
+
+    for hole in negative_loops:
+        sample = hole["sample"]
+        parents = [
+            outer
+            for outer in positive_loops
+            if outer["polygon"].contains(sample)  # type: ignore[union-attr]
+        ]
+        if not parents:
+            continue
+        parent = min(parents, key=lambda outer: outer["area"])  # type: ignore[index]
+        parent["holes"].append(hole)  # type: ignore[union-attr]
+
+    polygons = []
+    for outer in positive_loops:
+        holes = [hole["points"] for hole in outer["holes"]]  # type: ignore[index, union-attr]
+        polygon = Polygon(outer["points"], holes)  # type: ignore[arg-type]
+        if not polygon.is_valid:
+            polygon = polygon.buffer(0)
+        polygons.extend(iter_polygons(polygon, Polygon, MultiPolygon))
+    return polygons
+
+
+def mask_to_component_geometry(Polygon, MultiPolygon, unary_union, mask: np.ndarray, px_to_mm: float):
+    labels_count, labels = cv2.connectedComponents(mask.astype(np.uint8), connectivity=4)
+    polygons = []
+    for label in range(1, labels_count):
+        polygons.extend(component_polygons(Polygon, MultiPolygon, labels == label, px_to_mm))
+    return unary_union(polygons) if polygons else Polygon()
+
+
 def make_polyline_prism(cq, points_mm: list[tuple[float, float]], args: argparse.Namespace, z_mm: float, height_mm: float):
     return (
         cq.Workplane("XY")
@@ -1316,50 +1454,7 @@ def make_polygon_prism_with_cuts(cq, Polygon, polygon, args: argparse.Namespace)
 
 
 def make_contour_step_solids(cq, Polygon, MultiPolygon, unary_union, board_image: np.ndarray, px_to_mm: float, args: argparse.Namespace, filtered: bool) -> tuple[list, int]:
-    positive_loops: list[dict[str, object]] = []
-    negative_loops: list[dict[str, object]] = []
-    for loop in mask_to_boundary_loops(board_image < 128):
-        raw_points = loop[:-1] if loop and loop[0] == loop[-1] else loop
-        if len(raw_points) < 3:
-            continue
-        raw_area = polygon_area([(float(x), float(y)) for x, y in raw_points])
-        points_mm = [(x * px_to_mm, y * px_to_mm) for x, y in raw_points]
-        polygon = Polygon(points_mm)
-        if not polygon.is_valid:
-            polygon = polygon.buffer(0)
-        item = {
-            "points": points_mm,
-            "polygon": polygon,
-            "area": abs(polygon.area),
-            "sample": polygon.representative_point(),
-            "holes": [],
-        }
-        if raw_area > 0.0:
-            positive_loops.append(item)
-        else:
-            negative_loops.append(item)
-
-    for hole in negative_loops:
-        sample = hole["sample"]
-        parents = [
-            outer
-            for outer in positive_loops
-            if outer["polygon"].contains(sample)  # type: ignore[union-attr]
-        ]
-        if not parents:
-            continue
-        parent = min(parents, key=lambda outer: outer["area"])  # type: ignore[index]
-        parent["holes"].append(hole)  # type: ignore[union-attr]
-
-    polygons = []
-    for outer in positive_loops:
-        holes = [hole["points"] for hole in outer["holes"]]  # type: ignore[index, union-attr]
-        polygon = Polygon(outer["points"], holes)  # type: ignore[arg-type]
-        if not polygon.is_valid:
-            polygon = polygon.buffer(0)
-        polygons.extend(iter_polygons(polygon, Polygon, MultiPolygon))
-
-    geometry = unary_union(polygons) if polygons else Polygon()
+    geometry = mask_to_component_geometry(Polygon, MultiPolygon, unary_union, board_image < 128, px_to_mm)
     if args.black_shrink_mm > 0.0:
         geometry = geometry.buffer(-args.black_shrink_mm, join_style=2, mitre_limit=5.0)
     if not geometry.is_valid:
@@ -1402,7 +1497,7 @@ def write_step(output_dir: Path, prefix: str, args: argparse.Namespace) -> tuple
 
     if args.board_type == "charuco" and args.black_geometry == "rectangles_no_gaps":
         board = create_charuco_board(args.squares_x, args.squares_y, args.square_mm, args.marker_mm, args.dictionary)
-        black_solids, skipped = make_rectangle_step_solids(cq, board, args)
+        black_solids, skipped = make_rectangle_step_solids(cq, Polygon, MultiPolygon, unary_union, board, args)
     elif args.board_type == "chessboard" and args.black_geometry == "rectangles_no_gaps":
         black_solids, skipped = make_chessboard_step_solids(cq, args)
     elif args.board_type in {"circle_grid", "asymmetric_circle_grid"} and args.black_geometry == "rectangles_no_gaps":
@@ -1410,7 +1505,7 @@ def write_step(output_dir: Path, prefix: str, args: argparse.Namespace) -> tuple
     elif args.board_type == "framed_circle_grid" and args.black_geometry == "rectangles_no_gaps":
         black_solids, skipped = make_framed_circle_grid_step_solids(cq, args)
     elif args.board_type in {"aruco_marker_board", "aprilgrid"} and args.black_geometry == "rectangles_no_gaps":
-        black_solids, skipped = make_aruco_marker_board_step_solids(cq, args)
+        black_solids, skipped = make_aruco_marker_board_step_solids(cq, Polygon, MultiPolygon, unary_union, args)
     else:
         board_image, px_to_mm, _, _ = render_board_image(args)
         black_solids, skipped = make_contour_step_solids(
@@ -1422,6 +1517,17 @@ def write_step(output_dir: Path, prefix: str, args: argparse.Namespace) -> tuple
             px_to_mm,
             args,
             filtered=True,
+        )
+
+    if (
+        args.step_export_mode == "single_solid"
+        and args.black_geometry == "rectangles_no_gaps"
+        and len(black_solids) > MAX_SINGLE_SOLID_BOOLEAN_SOLIDS
+    ):
+        raise RuntimeError(
+            "rectangles_no_gaps + single_solid 需要融合过多黑色实体 "
+            f"({len(black_solids)} > {MAX_SINGLE_SOLID_BOOLEAN_SOLIDS})，可能长时间卡住。"
+            "请改用 --step-export-mode assembly，或使用 --step-geometry-mode contours_filtered。"
         )
 
     suffix = args.black_geometry
@@ -1803,6 +1909,9 @@ def run_generation(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(f"[ERROR] 参数无效：{exc}", file=sys.stderr)
         return 2
+    except RuntimeError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
