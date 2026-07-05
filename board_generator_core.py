@@ -13,7 +13,6 @@ import re
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Iterable
 
 try:
     import cv2
@@ -1264,19 +1263,8 @@ def polygon_feature_large_enough(polygon, min_feature_mm: float) -> bool:
     return (max_x - min_x) > min_feature_mm and (max_y - min_y) > min_feature_mm and polygon.area > min_feature_mm**2
 
 
-def make_wire(cq, points: Iterable[tuple[float, float, float]]):
-    return cq.Wire.makePolygon([cq.Vector(*point) for point in points], close=True)
-
-
-def orient_points(points: list[tuple[float, float, float]], ccw: bool) -> list[tuple[float, float, float]]:
-    area = polygon_area([(x, y) for x, y, _ in points])
-    if (ccw and area < 0.0) or (not ccw and area > 0.0):
-        return list(reversed(points))
-    return points
-
-
-def cad_points(coords: list[tuple[float, float]], args: argparse.Namespace, z_mm: float) -> list[tuple[float, float, float]]:
-    return [(x - args.base_width_mm / 2.0, args.base_height_mm / 2.0 - y, z_mm) for x, y in coords]
+def cad_points_2d(coords: list[tuple[float, float]], args: argparse.Namespace) -> list[tuple[float, float]]:
+    return [(x - args.base_width_mm / 2.0, args.base_height_mm / 2.0 - y) for x, y in coords]
 
 
 def iter_polygons(geometry, Polygon, MultiPolygon) -> list:
@@ -1291,6 +1279,40 @@ def iter_polygons(geometry, Polygon, MultiPolygon) -> list:
     for item in geoms:
         polygons.extend(iter_polygons(item, Polygon, MultiPolygon))
     return polygons
+
+
+def make_polyline_prism(cq, points_mm: list[tuple[float, float]], args: argparse.Namespace, z_mm: float, height_mm: float):
+    return (
+        cq.Workplane("XY")
+        .polyline(cad_points_2d(points_mm, args))
+        .close()
+        .extrude(height_mm)
+        .translate((0, 0, z_mm))
+    )
+
+
+def make_polygon_prism_with_cuts(cq, Polygon, polygon, args: argparse.Namespace):
+    exterior = [(float(x), float(y)) for x, y in list(polygon.exterior.coords)[:-1]]
+    solid = make_polyline_prism(cq, exterior, args, args.base_thickness_mm, args.black_height_mm)
+
+    # Some STEP importers/CAD kernels can mishandle one face with many inner wires.
+    # Cutting the white islands out explicitly is slower but more reliable.
+    cut_margin_mm = max(0.1, args.black_height_mm * 0.1)
+    cutter_height_mm = args.black_height_mm + 2.0 * cut_margin_mm
+    for interior in polygon.interiors:
+        hole_polygon = Polygon(interior)
+        if not polygon_feature_large_enough(hole_polygon, args.min_feature_mm):
+            continue
+        hole = [(float(x), float(y)) for x, y in list(interior.coords)[:-1]]
+        cutter = make_polyline_prism(
+            cq,
+            hole,
+            args,
+            args.base_thickness_mm - cut_margin_mm,
+            cutter_height_mm,
+        )
+        solid = solid.cut(cutter)
+    return solid
 
 
 def make_contour_step_solids(cq, Polygon, MultiPolygon, unary_union, board_image: np.ndarray, px_to_mm: float, args: argparse.Namespace, filtered: bool) -> tuple[list, int]:
@@ -1349,27 +1371,8 @@ def make_contour_step_solids(cq, Polygon, MultiPolygon, unary_union, board_image
         if filtered and not polygon_feature_large_enough(polygon, args.min_feature_mm):
             skipped += 1
             continue
-        exterior = [(float(x), float(y)) for x, y in list(polygon.exterior.coords)[:-1]]
-        outer_points = orient_points(cad_points(exterior, args, args.base_thickness_mm), ccw=True)
         try:
-            outer_wire = make_wire(cq, outer_points)
-        except Exception:
-            skipped += 1
-            continue
-        inner_wires = []
-        for interior in polygon.interiors:
-            hole_polygon = Polygon(interior)
-            if filtered and not polygon_feature_large_enough(hole_polygon, args.min_feature_mm):
-                continue
-            hole = [(float(x), float(y)) for x, y in list(interior.coords)[:-1]]
-            hole_points = orient_points(cad_points(hole, args, args.base_thickness_mm), ccw=False)
-            try:
-                inner_wires.append(make_wire(cq, hole_points))
-            except Exception:
-                skipped += 1
-        try:
-            face = cq.Face.makeFromWires(outer_wire, inner_wires)
-            solids.append(cq.Solid.extrudeLinear(face.outerWire(), face.innerWires(), (0, 0, args.black_height_mm)))
+            solids.append(make_polygon_prism_with_cuts(cq, Polygon, polygon, args))
         except Exception:
             skipped += 1
     return solids, skipped
